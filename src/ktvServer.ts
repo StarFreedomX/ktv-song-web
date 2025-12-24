@@ -290,7 +290,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         其中x_1 x_2等都是基于上一步的原子化操作
         因此无需使用标记直接移动即可
 
-        我们在OpLog里存储每一步的数据和产出的数组
+        我们在OpLog里存储每一步的数据和基于的数组
 
         首先第一步，打标
         HEAD-0-A-1-B-2-C-3-D-4-E-5-F-6-G-7-HEAD
@@ -300,13 +300,13 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         也就是说 插入index 2 并不是插入到链表元素2在的位置，而是ABCDEFG中去除待排元素后排列第二个(index=2-1)的后面
         举个例子就是  HEAD-0-A-1-B-D-E-2-C-3-4-5-F-6-G-7-TAIL
         把A插入到index=4的意思就是，先把链表的歌曲元素弄出来得到BDECFG，
-        然后A就知道自己要放到E(index=4-1)后面
+        然后A就知道自己要放到C(index=4-1)后面
         然后再进行链表操作放过去就行
-        也就是E-2变成E-A-2,0-A-1变成0-1
+        也就是C-3变成C-A-3,0-A-1变成0-1
 
         *其实也可以不用管链表
-        因为每个op都存了当前操作和结果
-        所以实际上重演逻辑的时候，拿到的数组一定是上一次操作的结果
+        因为每个op都存了当前操作和基础数组
+        所以实际上重演逻辑的时候，拿到的数组一定是当前的基础数组
         那就可以
         若op[i]时为
         把A插入到index=4
@@ -325,18 +325,19 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         E to index 3       S_2  HEAD-0-A-1-B-D-E-2-C-3-4-5-F-6-G-7
         insert after D(2)           0  | 1 |2|3| 4 |   5   |  6
         G to index 0       S_3  HEAD-G-0-A-1-B-D-E-2-C-3-4-5-F-6-7
-        insert after HEAD          0 |   1   |2|3| 3 | 4 | 5 | 6
+        insert after HEAD          0 |   1   |2|3| 4 |   5   | 6
 
         接下来执行变基
-        A to index 2
+        A to index "2"
         =insert A to "2" in chain
-        =insert A to  5  in S_3
-        =insert A after index 4 HEAD-G-0-1-B-D-E-A-2-C-3-4-5-F-6-7-TAIL
+        =insert A to  4  base on S_3 (G-(A)-B-D-E-   -C-F)
+                                     0|  1  |2|3|  4  |5|6
+        =insert A after index 3(E) HEAD-G-0-1-B-D-E-[A]-2-C-3-4-5-F-6-7-TAIL
         = G-B-D-E-A-C-F
         需要存入日志的内容:
         {
-            array: G-B-D-E-A-C-F
-            hash: hash(G-B-D-E-A-C-F)
+            array: G-A-B-D-E-C-F
+            hash: hash(G-A-B-D-E-C-F)
             element: A
             toIndex: 5
             timestamp: now
