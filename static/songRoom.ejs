@@ -12,7 +12,7 @@
 
         /* 置顶 */
         .highlight-top {
-            animation: pulseTop 1s ease;
+            animation: pulseTop 2s ease;
         }
 
         #app {
@@ -92,7 +92,7 @@
 
         /* 入场动画 */
         .slide-in-item {
-            max-height: 40px;
+            max-height: 50px;
             opacity: 0;
             margin-bottom: 0 !important;
             overflow: hidden;
@@ -109,7 +109,7 @@
         @keyframes slideInFromRight {
             from {
                 opacity: 0;
-                transform: translateX(300px);
+                transform: translateX(500px);
             }
             to {
                 opacity: 1;
@@ -147,7 +147,7 @@
             }
             to {
                 opacity: 0;
-                transform: translateX(300px);
+                transform: translateX(500px);
             }
         }
 
@@ -974,38 +974,43 @@
 
                 // 这里的逻辑与 load 中的“主动移动”一致
                 const oldIndex = songs.value.findIndex(s => s.id === song.id);
-                if (oldIndex !== -1) {
-                    // 标记为正在移动
-                    song.isDeleting = true;
+                if (oldIndex === -1) return;
 
-                    setTimeout(async () => {
-                        // 从原位置移除
-                        const [movedItem] = songs.value.splice(oldIndex, 1);
-                        // 插入到最前面
-                        songs.value.unshift(movedItem);
+                song.isDeleting = true;
 
-                        // 重置状态并触发高亮
-                        movedItem.isDeleting = false;
-                        movedItem.isTop = true;
-                        movedItem.isNew = true;
+                setTimeout(async () => {
+                    // 从原位置移除
+                    const [movedItem] = songs.value.splice(oldIndex, 1);
+                    // 插入到最前面
+                    songs.value.unshift(movedItem);
 
-                        // 发送给后端，toIndex: 目标顺位
-                        const success = await commitOp({
-                            song: movedItem,
-                            toIndex: 0
-                        });
+                    // 重置状态并触发高亮
+                    movedItem.isDeleting = false;
+                    movedItem.isNew = true;
 
-                        if (!success) {
-                            await load();
-                        } else {
-                            // 成功后延迟移除高亮
+                    // 发送给后端，toIndex: 目标顺位
+                    const success = await commitOp({
+                        song: movedItem,
+                        toIndex: 0
+                    });
+
+                    setTimeout(() => {
+                        movedItem.isNewActive = true;
+                    }, 10);
+
+                    if (!success) {
+                        await load();
+                    } else {
+                        setTimeout(() => {
+                            movedItem.isNew = false;
+                            movedItem.isNewActive = false;
+                            movedItem.isTop = true;
                             setTimeout(() => {
                                 movedItem.isTop = false;
-                                movedItem.isNew = false;
-                            }, 1000);
-                        }
-                    }, 300);
-                }
+                            }, 1200);
+                        }, 600);
+                    }
+                }, 350);
             };
 
             // 保存逻辑
