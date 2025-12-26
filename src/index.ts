@@ -1,7 +1,6 @@
 import * as dotenv from "dotenv";
 dotenv.config({ path: '.env' });
 dotenv.config({ path: '.env.example' });
-console.log(process.env.CACHE_OP_EXPIRE_TIME);
 import { runKTVServer } from "@/ktvServer";
 import ktvLogger from "@/logger";
 

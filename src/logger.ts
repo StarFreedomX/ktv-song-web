@@ -1,6 +1,4 @@
-export const debugTypeArray = ['error', 'warn', 'info', 'debug'] as const;
-
-export type debugType = typeof debugTypeArray[number];
+import { debugType,debugTypeArray } from '@/types'
 
 export function logger(type: string, message: any) {
     const requestTime = Date.now();
