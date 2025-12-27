@@ -759,7 +759,7 @@
 
                     if (res.success) {
                         if (await getHash(songs.value) !== res.hash) await load();
-                        lastHash.value = res.hash;
+                        // lastHash.value = res.hash;
                         if (res.song && opData.song) {
                             const localSong = songs.value.find(s => s.id === opData.song.id);
                             if (localSong) {
