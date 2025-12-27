@@ -203,33 +203,36 @@
             <p class="text-slate-400">房间: <%= roomId %></p>
         </div>
         <div class="flex flex-col items-end gap-2">
-            <button @click="showSettings = true"
-                    class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 hover:text-indigo-600 transition">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                     stroke-linecap="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
-            </button>
+            <div class="flex gap-2">
+                <button @click="nextSong"
+                        class="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition flex items-center gap-1">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                        <line x1="19" y1="5" x2="19" y2="19"></line>
+                    </svg>
+                    切歌
+                </button>
+                <button @click="showSettings = true"
+                        class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 hover:text-indigo-600 transition">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                         stroke-linecap="round">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+                    </svg>
+                </button>
+            </div>
             <div class="text-[10px] text-slate-300 font-mono bg-slate-100 px-2 py-1 rounded">
                 HASH: {{ lastHash.slice(0, 6) }}
             </div>
         </div>
     </header>
 
-<!--    <div class="mb-6 px-2">
-        <button @click="showAddModal = true"
-                class="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 active:opacity-90 transition shadow-lg shadow-indigo-200 flex items-center justify-center gap-2">
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
-                      d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-            </svg>
-            添加新歌曲
-        </button>
-    </div>-->
+    <div class="mb-4 flex items-center justify-between px-1">
+        <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest">待唱列表 ({{ queueList.length }})</h2>
+    </div>
 
     <draggable
-            v-model="songs"
+            v-model="queueList"
             item-key="id"
             handle=".drag-handle"
             ghost-class="ghost-card"
@@ -292,6 +295,22 @@
             </div>
         </template>
     </draggable>
+
+    <div v-if="historyList.length > 0" class="mt-12 mb-4 flex items-center justify-between px-1">
+        <h2 class="text-sm font-bold text-slate-400 uppercase tracking-widest">已唱列表 ({{ historyList.length }})</h2>
+    </div>
+
+    <div v-for="element in historyList" :key="element.id"
+         @click="goToLink(element)"
+         class="song-card bg-slate-50/50 mb-3 p-4 rounded-2xl border border-slate-100 flex items-center group opacity-60 grayscale-[0.5]">
+        <div class="flex-1 min-w-0">
+            <div class="font-bold text-slate-500 truncate group-hover:text-indigo-600 transition">
+                {{ element.title }}
+            </div>
+            <div class="text-[10px] text-slate-300 truncate">{{ element.url }}</div>
+        </div>
+        <div class="text-[10px] font-bold text-slate-300 bg-slate-100 px-2 py-1 rounded-lg">已唱</div>
+    </div>
 
     <transition name="modal-fade">
         <div v-if="showAddModal"
@@ -392,7 +411,6 @@
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="2" stroke-linecap="round">
                             <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
                     </div>
                     <h3 class="text-xl font-bold text-slate-800">确认删除？</h3>
                     <p class="text-slate-500 mt-2">歌曲 <span
@@ -560,7 +578,7 @@
      * @property {boolean} [isAffected]
      * @property {boolean} [isTop]
      */
-    const { createApp, ref, onMounted, onUnmounted } = Vue;
+    const { createApp, ref, onMounted, onUnmounted, computed, watch } = Vue;
     createApp({
         components: {draggable: window.vuedraggable},
         setup() {
@@ -573,6 +591,39 @@
             const editForm = ref({title: '', url: ''});
             /** @type {import('vue').Ref<Song[]>} */
             const songs = ref([]);
+
+            // 逻辑拆分：待唱列表和已唱列表
+            const queueList = computed({
+                get: () => songs.value.filter(s => !s.state || s.state === 'queued'),
+                set: (newList) => {
+                    const history = songs.value.filter(s => s.state === 'sung');
+                    songs.value = [...newList, ...history];
+                }
+            });
+            const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+
+            const nextSong = async () => {
+                try {
+                    const res = await fetch(`/api/nextSong?roomId=${roomId}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            idArrayHash: lastHash.value
+                        })
+                    }).then(r => r.json());
+
+                    if (res.success) {
+                        lastHash.value = res.hash;
+                        await load();
+                    } else if (res.code === 'REJECT') {
+                        lastHash.value = EMPTY_HASH;
+                        await load();
+                    }
+                } catch (e) {
+                    console.error("Next Song Error:", e);
+                }
+            };
+
             const form = ref({title: '', url: ''})
             const pendingJumpUrl = ref(null); // 存储待跳转的 URL
             const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
@@ -586,8 +637,8 @@
             const commitApiUrl = "api/songOperation"
             const loadSongListUrl = "api/songListInfo"
 
-            Vue.watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
-            Vue.watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
+            watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
+            watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
 
             if (!window.isSecureContext) {
                 console.error("当前环境不是安全上下文，Web Crypto API 将不可用！");
@@ -600,7 +651,7 @@
                 if (!songs || songs.length === 0) return "EMPTY_LIST_HASH";
 
                 // 将歌曲对象数组转为固定格式的字符串
-                const str = songs.map(s => `${s.id}:${s.title}:${s.url}`).join('|');
+                const str = songs.map(s => `${s.id}:${s.title}:${s.url}:${s.state || 'queued'}`).join('|');
                 const msgBuffer = new TextEncoder().encode(str);
 
                 // SHA-256
@@ -614,8 +665,8 @@
             const commitOp = async (opData) => {
                 let cleanSong = null;
                 if (opData.song) {
-                    const {id, title, url} = opData.song;
-                    cleanSong = {id, title, url};
+                    const {id, title, url, state} = opData.song;
+                    cleanSong = {id, title, url, state};
                 }
 
                 try {
@@ -984,6 +1035,7 @@
                 isDragging.value = false;
                 if (evt.moved) {
                     const {element, newIndex} = evt.moved;
+                    // 因为 queueList 在 songs 的最前面，所以 newIndex 就是最终 index
                     await commitOp({
                         song: element,
                         toIndex: newIndex
@@ -999,7 +1051,7 @@
 
             const moveToTop = async (song) => {
                 // 如果已经在第一位，无需操作
-                if (songs.value[0]?.id === song.id) return;
+                if (queueList.value[0]?.id === song.id) return;
 
                 // 这里的逻辑与 load 中的“主动移动”一致
                 const oldIndex = songs.value.findIndex(s => s.id === song.id);
@@ -1010,7 +1062,7 @@
                 setTimeout(async () => {
                     // 从原位置移除
                     const [movedItem] = songs.value.splice(oldIndex, 1);
-                    // 插入到最前面
+                    // 插入到最前面 (待唱列表最前面)
                     songs.value.unshift(movedItem);
 
                     // 重置状态并触发高亮
@@ -1107,7 +1159,8 @@
             onUnmounted(() => clearInterval(timer))
 
             return {
-                songs, form, add, remove, load, onDragChange,
+                songs, queueList, historyList, nextSong,
+                form, add, remove, load, onDragChange,
                 lastHash, isDragging, goToLink, startEdit,
                 saveEdit, editingSong, editForm, moveToTop,
                 deletingSong, confirmDelete, pendingJumpUrl,

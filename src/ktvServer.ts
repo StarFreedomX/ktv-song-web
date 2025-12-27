@@ -101,6 +101,66 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         koaCtx.body = { success: true, hash: getHash(songs) };
     });
 
+    // 切歌接口 (下一首)
+    router.post('/api/nextSong', async (koaCtx) => {
+        const { roomId: roomIds } = koaCtx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const { idArrayHash } = koaCtx.request.body as { idArrayHash: string };
+
+        if (!roomSongsCache[roomId]) {
+            roomSongsCache[roomId] = (await storage.get<Song[]>(DATABASE_NAME, roomId) || []);
+        }
+
+        const currentSongs = roomSongsCache[roomId];
+        // 找到第一首待唱歌曲
+        const nextSongIdx = currentSongs.findIndex(s => !s.state || s.state === 'queued');
+        if (nextSongIdx === -1) {
+            return koaCtx.body = { success: false, msg: '队列中没有待唱歌曲' };
+        }
+
+        const song = { ...currentSongs[nextSongIdx], state: 'sung' as const };
+        // 将其移动到列表末尾（已唱列表的最后）
+        const toIndex = currentSongs.length - 1;
+
+        const serverHash = getHash(currentSongs);
+        const currentOp: OpLog = {
+            baseIdArray: currentSongs.map(s => s.id),
+            baseHash: serverHash,
+            song: song,
+            toIndex: toIndex,
+            timestamp: Date.now()
+        };
+
+        const logs = roomOpCache[roomId] || [];
+        const latest = idArrayHash === serverHash;
+        let hitIdx = -1;
+        if (!latest) {
+            for (let i = logs.length - 1; i >= 0; i--) {
+                if (logs[i].baseHash === idArrayHash) {
+                    hitIdx = i;
+                    break;
+                }
+            }
+            if (hitIdx === -1) return koaCtx.body = { success: false, code: 'REJECT' };
+        }
+
+        const baseIdArray = latest ? currentSongs.map(s => s.id) : [...logs[hitIdx].baseIdArray];
+        const laterOps = latest ? [] : [...logs.slice(hitIdx)];
+
+        try {
+            const finalSongs = songOperation([...currentSongs], baseIdArray, laterOps, currentOp);
+            const finalHash = getHash(finalSongs);
+            logs.push(currentOp);
+            if (logs.length > 50) logs.shift();
+            roomSongsCache[roomId] = finalSongs;
+            roomOpCache[roomId] = logs;
+            await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
+            koaCtx.body = { success: true, hash: finalHash };
+        } catch (e) {
+            koaCtx.body = { success: false, code: 'REJECT' };
+        }
+    });
+
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds} = koaCtx.query;

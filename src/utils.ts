@@ -325,7 +325,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 // 生成哈希工具函数
 function getHash(songs: Song[]) {
     if (!songs || songs.length === 0) return "EMPTY_LIST_HASH"; // 给空列表一个固定标识
-    const str = songs.map(s => `${s.id}:${s.title}:${s.url}`).join('|');
+    const str = songs.map(s => `${s.id}:${s.title}:${s.url}:${s.state || 'queued'}`).join('|');
     return crypto.createHash('sha256').update(str).digest('hex');
 }
 
