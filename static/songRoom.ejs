@@ -325,9 +325,8 @@
     <!-- 已唱列表 -->
     <div v-show="activeTab === 'history'">
         <div v-for="element in historyList" :key="element.id"
-             @click="goToLink(element)"
-             class="song-card bg-slate-50/50 mb-3 p-4 rounded-2xl border border-slate-200 flex items-center group opacity-90 grayscale-[0.5]">
-            <div class="flex-1 min-w-0">
+             class="song-card bg-slate-50/50 mb-3 p-4 rounded-2xl border border-slate-200 flex items-center group opacity-90">
+            <div class="flex-1 min-w-0" @click="goToLink(element)">
                 <div class="font-bold text-slate-500 truncate group-hover:text-indigo-600 transition">
                     {{ element.title }}
                 </div>
@@ -338,10 +337,16 @@
                     <div class="text-[10px] text-slate-300 truncate">{{ element.url }}</div>
                 </div>
             </div>
+
+            <button @click.stop="undoSung(element)"
+                    class="mr-2 p-2 text-slate-300 hover:text-indigo-500 transition"
+                    title="撤回到待唱顶部">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                    <path d="M3 10h10a8 8 0 0 1 8 8v2M3 10l6-6M3 10l6 6"/>
+                </svg>
+            </button>
+
             <div class="text-[10px] font-bold text-slate-300 bg-slate-100 px-2 py-1 rounded-lg">已唱</div>
-        </div>
-        <div v-if="historyList.length === 0" class="text-center py-20 text-slate-300">
-            暂无已唱记录
         </div>
     </div>
 
@@ -1228,6 +1233,13 @@
                 }
             }
 
+            const undoSung = async (song) => {
+                await commitOp({
+                    song: { ...song, state: 'queued' },
+                    toIndex: 0
+                });
+            };
+
             const saveNickname = () => {
                 if (tempNickname.value.trim()) {
                     nickname.value = tempNickname.value.trim();
@@ -1251,7 +1263,7 @@
                 songs, queueList, historyList, nextSong,
                 form, add, remove, load, onDragChange,
                 lastHash, activeTab, isDragging, goToLink, startEdit,
-                saveEdit, editingSong, editForm, moveToTop,
+                saveEdit, editingSong, editForm, moveToTop, undoSung,
                 deletingSong, confirmDelete, pendingJumpUrl,
                 jumpSongTitle, confirmJump, showSettings,
                 jumpMode, autoJump, showAddModal, autoInput,
