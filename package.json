@@ -8,10 +8,12 @@
     "main": "lib/index.js",
     "typings": "lib/index.d.ts",
     "scripts": {
-        "dev": "cross-env NODE_ENV=development tsx watch ./src/index.ts",
-        "test": "cross-env NODE_ENV=development tsx ./src/index.ts",
+        "dev-watch": "cross-env NODE_ENV=development tsx watch ./src/index.ts",
+        "dev": "cross-env NODE_ENV=development tsx ./src/index.ts",
         "start": "cross-env NODE_ENV=production node ./lib/index.js",
-        "build": "node build.mjs"
+        "build": "node build.mjs",
+        "docker-build": "docker-compose up -d --build --force-recreate --remove-orphans",
+        "docker-build-proxy": "cross-env HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 docker-compose up -d --build --force-recreate --remove-orphans",
     },
     "files": [
         "lib",

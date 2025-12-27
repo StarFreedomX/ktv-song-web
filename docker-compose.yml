@@ -1,7 +1,8 @@
 services:
-  app:
+  ktv-server:
     container_name: k-mlw-worker-1
     build: .
+    image: ktv-song-web
     ports:
       - "5823:5823"
     environment:
