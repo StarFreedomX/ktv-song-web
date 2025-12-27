@@ -321,7 +321,7 @@
     <div v-show="activeTab === 'history'">
         <div v-for="element in historyList" :key="element.id"
              @click="goToLink(element)"
-             class="song-card bg-slate-50/50 mb-3 p-4 rounded-2xl border border-slate-100 flex items-center group opacity-60 grayscale-[0.5]">
+             class="song-card bg-slate-50/50 mb-3 p-4 rounded-2xl border border-slate-200 flex items-center group opacity-90 grayscale-[0.5]">
             <div class="flex-1 min-w-0">
                 <div class="font-bold text-slate-500 truncate group-hover:text-indigo-600 transition">
                     {{ element.title }}
@@ -468,6 +468,7 @@
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="2" stroke-linecap="round">
                             <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                        </svg>
                     </div>
                     <h3 class="text-xl font-bold text-slate-800">确认删除？</h3>
                     <p class="text-slate-500 mt-2">歌曲 <span
