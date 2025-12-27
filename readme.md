@@ -25,3 +25,14 @@ yarn start
 # npm run start
 # pnpm start
 ```
+
+### 使用 Docker Compose 启动
+
+如果你安装了 Docker 和 Docker Compose，可以使用以下命令一键启动：
+
+```shell
+docker compose up -d
+#如果使用旧版docker compose (v1),则使用docker-compose up -d
+```
+
+这会自动启动 Node.js 应用和 Redis 服务。应用将运行在 `http://localhost:5823`。
