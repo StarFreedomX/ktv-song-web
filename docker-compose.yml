@@ -16,8 +16,10 @@ services:
   redis:
     container_name: k-mlw-redis-1
     image: redis:alpine
-    ports:
-      - "6379:6379"
+    # 为了防止已有redis服务的影响，不向外暴露端口
+    # 如果需要在主机访问这个redis，把下面的注释删除
+    # ports:
+    #  - "6379:6379"
     volumes:
       - redis_data:/data
     restart: always
