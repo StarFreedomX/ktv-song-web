@@ -678,28 +678,6 @@
             });
             const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
 
-            const nextSong = async () => {
-                try {
-                    const res = await fetch(`/api/nextSong?roomId=${roomId}`, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            idArrayHash: lastHash.value
-                        })
-                    }).then(r => r.json());
-
-                    if (res.success) {
-                        lastHash.value = res.hash;
-                        await load();
-                    } else if (res.code === 'REJECT') {
-                        lastHash.value = EMPTY_HASH;
-                        await load();
-                    }
-                } catch (e) {
-                    console.error("Next Song Error:", e);
-                }
-            };
-
             const form = ref({title: '', url: ''})
             const pendingJumpUrl = ref(null); // 存储待跳转的 URL
             const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
@@ -764,7 +742,7 @@
 
                     if (res.success) {
                         if (await getHash(songs.value) !== res.hash) await load();
-                        // lastHash.value = res.hash;
+                        else  lastHash.value = res.hash;
                         if (res.song && opData.song) {
                             const localSong = songs.value.find(s => s.id === opData.song.id);
                             if (localSong) {
@@ -1238,6 +1216,25 @@
                     song: { ...song, state: 'queued' },
                     toIndex: 0
                 });
+            };
+
+            const nextSong = async () => {
+                try {
+                    const res = await fetch(`/api/nextSong?roomId=${roomId}`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            idArrayHash: lastHash.value
+                        })
+                    }).then(r => r.json());
+
+                    if (res.code === 'REJECT') {
+                        lastHash.value = EMPTY_HASH;
+                    }
+                    await load();
+                } catch (e) {
+                    console.error("Next Song Error:", e);
+                }
             };
 
             const saveNickname = () => {

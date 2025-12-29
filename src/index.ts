@@ -1,10 +1,8 @@
-import * as dotenv from "dotenv";
-dotenv.config({ path: '.env' });
-dotenv.config({ path: '.env.example' });
 import { runKTVServer } from "@/ktvServer";
 import ktvLogger from "@/logger";
 
-ktvLogger.info('Node Env is', process.env.NODE_ENV);
+ktvLogger.info('Node Env is: ', process.env.NODE_ENV);
+ktvLogger.info('Debug Mode is: ', process.env.DEBUG_MODE);
 // assets 目录
 const staticDir = './static';
 

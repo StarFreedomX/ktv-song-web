@@ -81,24 +81,30 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         ktvLogger.debug('shuffle: ', roomId)
         if (!roomId || !roomSongsCache[roomId]) {
+            ktvLogger.debug('REJECT', 'Room not found')
             koaCtx.body = { success: false, msg: 'Room not found' };
             return;
         }
-        // Fisher-Yates Shuffle
-        const songs = [...roomSongsCache[roomId]];
-        for (let i = songs.length - 1; i > 0; i--) {
+
+        const allSongs = [...roomSongsCache[roomId]];
+        // 分离已唱和未唱
+        const sungSongs = allSongs.filter(s => s.state === 'sung');
+        const pendingSongs = allSongs.filter(s => s.state !== 'sung');
+
+        // 仅对未唱歌曲进行 Fisher-Yates Shuffle
+        for (let i = pendingSongs.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
-            [songs[i], songs[j]] = [songs[j], songs[i]];
+            [pendingSongs[i], pendingSongs[j]] = [pendingSongs[j], pendingSongs[i]];
         }
 
+        const finalSongs = [...pendingSongs, ...sungSongs];
+
         // 重置缓存
-        roomSongsCache[roomId] = songs;
+        roomSongsCache[roomId] = finalSongs;
         roomOpCache[roomId] = [];
+        await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
 
-        const CACHE_EXPIRE_TIME = Number(process.env.CACHE_DATA_EXPIRE_TIME) || 24 * 60 * 60 * 1000;
-        await storage.set(DATABASE_NAME, roomId, songs, CACHE_EXPIRE_TIME);
-
-        koaCtx.body = { success: true, hash: getHash(songs) };
+        koaCtx.body = { success: true, hash: getHash(finalSongs) };
     });
 
     // 切歌接口 (下一首)
@@ -159,6 +165,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
             koaCtx.body = { success: true, hash: finalHash };
         } catch (e) {
+            ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
     });
@@ -168,13 +175,14 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const { roomId: roomIds} = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         if (!ROOM_ID_REGEX.test(roomId)) {
+            ktvLogger.debug('REJECT', 'Invalid Room ID')
             return koaCtx.body = { success: false, msg: 'Invalid Room ID' };
         }
         const body = koaCtx.request.body as SongOperationBody;
         const { idArrayHash, song, toIndex } = body;
-        ktvLogger.debug('post: ', roomId, ' base on ', idArrayHash, 'put', song, 'to', toIndex);
-        ktvLogger.debug(song?.title,'POST AT:', Date.now())
-        ktvLogger.debug(song?.title,'POST AT:', Date.now())
+        ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
+        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
+        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
 
         // 如果是 B 站链接
         if (song && song.url && (song.url.includes('b23.tv') || song.url.includes('bilibili.com'))) {
@@ -192,22 +200,22 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         if (!roomSongsCache[roomId]) {
             roomSongsCache[roomId] = (await storage.get<Song[]>(DATABASE_NAME, roomId) || []);
         }
+        const allSongs = [...roomSongsCache[roomId]];
+        const waitingLength = allSongs.filter(s=>s.state!=='sung').length;
+        const serverHash = getHash(allSongs);
+        const alreadyHad = allSongs.some(s=>s.id===song.id)
 
-        const currentSongs = roomSongsCache[roomId];
-        const serverHash = getHash(currentSongs);
-
-        const nowSongs = [...roomSongsCache[roomId]];
 
         const currentOp: OpLog = {
             // 这是提前配置好了变基后的数据
-            baseIdArray: nowSongs.map(s=>s.id),
+            baseIdArray: allSongs.map(s=>s.id),
             baseHash: serverHash,
             song: song,
             // 这里的toIndex不是变基后的，songOperation函数内会自动修正
-            toIndex: toIndex,
+            toIndex: toIndex >= waitingLength ? allSongs.length - (alreadyHad?1:0) : toIndex,
             timestamp: Date.now()
         };
-        ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
+        // ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
 
 
         const logs: OpLog[] = roomOpCache[roomId] || [];
@@ -220,40 +228,48 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
                 break;
             }
         }
-        ktvLogger.debug(song?.title, 'FIND INDEX AT:', Date.now(), { hitIdx, latest, idArrayHash, logsLength: logs?.length })
+        ktvLogger.debug('server song lists:', allSongs.map(s => s.id));
+        ktvLogger.debug(song?.title, 'FIND INDEX:', { hitIdx, latest, serverHash, logsLength: logs?.length })
 
         // REJECT 逻辑：如果前端传来的 Hash 在日志里找不到
         // 可能是因为服务器重启导致 Log 丢失，或者前端落后太多
         if (!latest && hitIdx === -1) {
+            ktvLogger.debug('REJECT')
             return koaCtx.body = { success: false, code: 'REJECT' };
         }
 
         const baseLog =  logs.at(hitIdx);
-        const baseIdArray = latest ? nowSongs.map(s=>s.id) : [...baseLog.baseIdArray];
-        ktvLogger.debug(song?.title,'BASE ARRAY AT:', Date.now())
+        const baseIdArray = latest ? allSongs.map(s=>s.id) : [...baseLog.baseIdArray];
+        // ktvLogger.debug(song?.title,'BASE ARRAY AT:', Date.now())
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
-        ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
+        // ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
 
         try {
             // 执行重演逻辑
-            ktvLogger.debug(currentOp?.song?.title,'IN AT:', Date.now())
-            const finalSongs = songOperation(nowSongs, baseIdArray, laterOps, currentOp);
-            ktvLogger.debug(currentOp?.song?.title,'OUT AT:', Date.now())
+            // ktvLogger.debug(currentOp?.song?.title,'IN AT:', Date.now())
+            const tempSongs = songOperation(allSongs, baseIdArray, laterOps, currentOp);
+            const queueSongs = tempSongs.filter(s => s.state !== 'sung');
+            const sungSongs = tempSongs.filter(s => s.state === 'sung');
+            const finalSongs = [...queueSongs, ...sungSongs];
+            // ktvLogger.debug(currentOp?.song?.title,'OUT AT:', Date.now())
             const finalHash = getHash(finalSongs);
+            ktvLogger.debug('new hash:', finalHash);
             logs.push(currentOp);
-            ktvLogger.debug(currentOp?.song?.title,'PUSH AT:', Date.now())
+            // ktvLogger.debug(currentOp?.song?.title,'PUSH AT:', Date.now())
 
             if (logs.length > 50) logs.shift();
 
             roomSongsCache[roomId] = finalSongs;
             roomOpCache[roomId] = logs;
-            ktvLogger.debug(currentOp?.song?.title,'SYNC AT:', Date.now())
-            await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);;
-            ktvLogger.debug(currentOp?.song?.title,'CACHE AT:', Date.now())
+            // ktvLogger.debug(currentOp?.song?.title,'SYNC AT:', Date.now())
+            await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
+            // ktvLogger.debug(currentOp?.song?.title,'CACHE AT:', Date.now())
             koaCtx.body = { success: true, hash: finalHash, song };
+            // console.log(finalSongs)
         } catch (e) {
             ktvLogger.error("Operation re-run failed:", e);
             koaCtx.body = { success: false, code: 'REJECT' };
+            ktvLogger.debug('REJECT')
         }
     });
 

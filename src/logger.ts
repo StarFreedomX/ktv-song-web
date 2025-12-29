@@ -1,3 +1,6 @@
+import * as dotenv from "dotenv";
+dotenv.config({ path: '.env' });
+dotenv.config({ path: '.env.example' });
 import { debugType,debugTypeArray } from '@/types'
 
 export function logger(type: string, message: any) {
@@ -18,10 +21,16 @@ export class KTVLogger {
             : debugTypeArray.indexOf(defaultDebug);
     }
 
-    error = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('error') && logger('error', args.join(' '));
-    info = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('info') && logger('info', ' '+args.join(' '));
-    warn = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('warn') && logger('warn', ' '+args.join(' '));
-    debug = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('debug') && logger('debug', args.join(' '));
+    error = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('error') && logger('error', args.map(formatMessage).join(' '));
+    info = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('info') && logger('info', ' '+args.map(formatMessage).join(' '));
+    warn = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('warn') && logger('warn', ' '+args.map(formatMessage).join(' '));
+    debug = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('debug') && logger('debug', args.map(formatMessage).join(' '));
+}
+
+function formatMessage(message: any) {
+    return  typeof message === 'object'
+        ? JSON.stringify(message, null, 2) // '2' 表示缩进空格数，增加可读性
+        : message;
 }
 const ktvLogger = new KTVLogger();
 export default ktvLogger;
