@@ -81,6 +81,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         ktvLogger.debug('shuffle: ', roomId)
         if (!roomId || !roomSongsCache[roomId]) {
+            ktvLogger.debug('REJECT', 'Room not found')
             koaCtx.body = { success: false, msg: 'Room not found' };
             return;
         }
@@ -159,6 +160,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
             koaCtx.body = { success: true, hash: finalHash };
         } catch (e) {
+            ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
     });
@@ -168,13 +170,14 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const { roomId: roomIds} = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         if (!ROOM_ID_REGEX.test(roomId)) {
+            ktvLogger.debug('REJECT', 'Invalid Room ID')
             return koaCtx.body = { success: false, msg: 'Invalid Room ID' };
         }
         const body = koaCtx.request.body as SongOperationBody;
         const { idArrayHash, song, toIndex } = body;
-        ktvLogger.debug('post: ', roomId, ' base on ', idArrayHash, 'put', song, 'to', toIndex);
-        ktvLogger.debug(song?.title,'POST AT:', Date.now())
-        ktvLogger.debug(song?.title,'POST AT:', Date.now())
+        ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
+        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
+        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
 
         // 如果是 B 站链接
         if (song && song.url && (song.url.includes('b23.tv') || song.url.includes('bilibili.com'))) {
@@ -207,7 +210,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             toIndex: toIndex,
             timestamp: Date.now()
         };
-        ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
+        // ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
 
 
         const logs: OpLog[] = roomOpCache[roomId] || [];
@@ -225,6 +228,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         // REJECT 逻辑：如果前端传来的 Hash 在日志里找不到
         // 可能是因为服务器重启导致 Log 丢失，或者前端落后太多
         if (!latest && hitIdx === -1) {
+            ktvLogger.debug('REJECT')
             return koaCtx.body = { success: false, code: 'REJECT' };
         }
 
@@ -232,7 +236,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         const baseIdArray = latest ? nowSongs.map(s=>s.id) : [...baseLog.baseIdArray];
         ktvLogger.debug(song?.title,'BASE ARRAY AT:', Date.now())
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
-        ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
+        // ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
 
         try {
             // 执行重演逻辑
@@ -241,19 +245,18 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             ktvLogger.debug(currentOp?.song?.title,'OUT AT:', Date.now())
             const finalHash = getHash(finalSongs);
             logs.push(currentOp);
-            ktvLogger.debug(currentOp?.song?.title,'PUSH AT:', Date.now())
+            // ktvLogger.debug(currentOp?.song?.title,'PUSH AT:', Date.now())
 
             if (logs.length > 50) logs.shift();
 
             roomSongsCache[roomId] = finalSongs;
             roomOpCache[roomId] = logs;
-            ktvLogger.debug(currentOp?.song?.title,'SYNC AT:', Date.now())
-            await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);;
-            ktvLogger.debug(currentOp?.song?.title,'CACHE AT:', Date.now())
             koaCtx.body = { success: true, hash: finalHash, song };
+            // console.log(finalSongs)
         } catch (e) {
             ktvLogger.error("Operation re-run failed:", e);
             koaCtx.body = { success: false, code: 'REJECT' };
+            ktvLogger.debug('REJECT')
         }
     });
 
