@@ -56,8 +56,8 @@ async function resolveBilibiliData(inputUrl: string) {
  * 对歌曲进行变基操作，并返回最新歌曲列表顺序
  * @param nowSongs  后端当前歌曲集合
  * @param baseSongIdArray   base歌曲排列顺序
- * @param ops   后端从base开始执行的操作(不包括生成base)
- * @param nowOp 当前操作(基于base baseSongIdArray)
+ * @param ops   后端从base开始执行的操作(不包括生成base)，index是移动后该元素的index
+ * @param nowOp 当前操作(基于base baseSongIdArray)，index是移动后该元素的index
  */
 function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[], nowOp: OpLog): Song[] {
     ktvLogger.debug({ baseSongIdArray, ops, nowOp })
@@ -161,10 +161,6 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         toIndex: 5
         timestamp: now
     }
-
-
-
-
      */
 
     // 构建最新的 Song 状态池
@@ -176,7 +172,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 
     // 把操作按照时间由远到近排序(时间戳升序)
     const sortedOps: OpLog[] = [...ops].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    [...sortedOps,nowOp].forEach(op => {
+    [...sortedOps, nowOp].forEach(op => {
         if (op?.song?.id && op.toIndex !== -1) {
             // 更新这段操作时的歌曲
             latestSongMap.set(op.song.id, op.song);
@@ -190,6 +186,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         val: string | number;
         prev: ListNode | null = null;
         next: ListNode | null = null;
+
         constructor(val: string | number) { this.val = val; }
     }
 
@@ -206,7 +203,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         const numberNode = new ListNode(i);
         numberNodes.set(i, numberNode);
         // 和前一个相连
-        [current.next,numberNode.prev] = [numberNode,current];
+        [current.next, numberNode.prev] = [numberNode, current];
         // 移动当前指向
 
         current = numberNode;
@@ -218,7 +215,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
                 // 加入Map
                 idNodes.set(id, idNode);
                 // 和前一个相连
-                [current.next,idNode.prev] = [idNode,current];
+                [current.next, idNode.prev] = [idNode, current];
                 current = idNode;
             }
         }
@@ -235,10 +232,9 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
             idNodes.set(opId, opNode);
         }
         // 删除元素
-        if (toIndex===-1){
+        if (toIndex === -1) {
             if (opNode.prev) opNode.prev.next = opNode.next;
             if (opNode.next) opNode.next.prev = opNode.prev;
-
             opNode.prev = opNode.next = null;
             continue;
         }
@@ -246,13 +242,13 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         // 获取插入位置的前一个元素
         const toSongNext: ListNode = toIndex === 0
             ? head
-            : idNodes.get(lastArray.filter(s=>s!==opId).at(toIndex-1));
+            : idNodes.get(lastArray.filter(s => s !== opId).at(toIndex - 1));
         // 如果本身在链表中，先断开连接
-        if(opNode.prev) opNode.prev.next = opNode.next;
-        if(opNode.next) opNode.next.prev = opNode.prev;
+        if (opNode.prev) opNode.prev.next = opNode.next;
+        if (opNode.next) opNode.next.prev = opNode.prev;
         // 新连接
-        [opNode.next, opNode.prev] = [toSongNext.next,toSongNext];
-        [toSongNext.next.prev, toSongNext.next] = [opNode,opNode];
+        [opNode.next, opNode.prev] = [toSongNext.next, toSongNext];
+        [toSongNext.next.prev, toSongNext.next] = [opNode, opNode];
 
     }
 
@@ -281,18 +277,16 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
     const insertNumberNode = numberNodes.get(finalIndex)
 
 
-
-
     let opNode = idNodes.get(opId);
     if (!opNode) {
         opNode = new ListNode(opId);
         idNodes.set(opId, opNode);
     }
-    if (toIndex===-1){
+    if (toIndex === -1) {
         if (opNode.prev) opNode.prev.next = opNode.next;
         if (opNode.next) opNode.next.prev = opNode.prev;
         opNode.prev = opNode.next = null;
-    }else {
+    } else {
         // 断开
         if (opNode.prev) opNode.prev.next = opNode.next;
         if (opNode.next) opNode.next.prev = opNode.prev;
@@ -319,7 +313,7 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
         }
         p = p.next;
     }
-    nowOp.toIndex = result.findIndex(r=>r.id==opId);
+    nowOp.toIndex = result.findIndex(r => r.id == opId);
     return result;
 }
 
