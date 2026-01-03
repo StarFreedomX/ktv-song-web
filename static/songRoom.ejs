@@ -202,10 +202,16 @@
     <header class="mb-6 flex justify-between items-start">
         <div>
             <h1 class="text-3xl font-black text-indigo-600">KTV Queue</h1>
-            <p class="text-slate-400">房间: <%= roomId %></p>
+            <p class="text-slate-400">房间ID: <%= roomId %></p>
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
+                <button @click="showFavoritesModal = true"
+                        class="px-3 py-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-red-500 transition"
+                        >
+                    <!-- <爱心> -->
+                    收藏
+                </button>
                 <button @click="nextSong"
                         class="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition flex items-center gap-1">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
@@ -291,6 +297,15 @@
                         </div>
                     </div>
 
+                    <button @click.stop="toggleFavorite(element)" 
+                            :class="['p-2 transition', isFavorited(element) ? 'text-red-500' : 'text-slate-200 hover:text-red-400']"
+                            title="收藏">
+                        <svg width="18" height="18" viewBox="0 0 24 24" :fill="isFavorited(element) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                        </svg>
+                    </button>
+
                     <button @click.stop="moveToTop(element)" class="p-2 text-slate-300 hover:text-orange-500 transition"
                             title="置顶">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -337,6 +352,15 @@
                     <div class="text-[10px] text-slate-300 truncate">{{ element.url }}</div>
                 </div>
             </div>
+
+            <button @click.stop="toggleFavorite(element)" 
+                    :class="['p-2 transition', isFavorited(element) ? 'text-red-500' : 'text-slate-200 hover:text-red-400']"
+                    title="收藏">
+                <svg width="18" height="18" viewBox="0 0 24 24" :fill="isFavorited(element) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round">
+                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+            </button>
 
             <button @click.stop="undoSung(element)"
                     class="mr-2 p-2 text-slate-300 hover:text-indigo-500 transition"
@@ -531,6 +555,61 @@
     </transition>
 
     <transition name="modal-fade">
+        <div v-if="showFavoritesModal"
+             class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+             @click.self="showFavoritesModal = false">
+            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 flex flex-col max-h-[80vh]">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-slate-800">我的收藏 ({{ favorites.length }})</h3>
+                    <button @click="showFavoritesModal = false" class="text-slate-400 hover:text-slate-600">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                </div>
+
+                <div class="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+                    <div v-for="fav in favorites" :key="fav.id" 
+                         class="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center group">
+                        <div class="flex-1 min-w-0">
+                            <div class="font-bold text-slate-700 text-sm truncate">{{ fav.title }}</div>
+                            <div class="text-[10px] text-slate-400 truncate">{{ fav.url }}</div>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <button @click="addFavoriteToQueue(fav)" 
+                                    class="p-2 text-indigo-500 hover:bg-indigo-50 rounded-xl transition"
+                                    title="加入队列">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                    <path d="M12 5v14M5 12h14"></path>
+                                </svg>
+                            </button>
+                            <button @click="toggleFavorite(fav)" 
+                                    class="p-2 text-red-500 hover:bg-red-50 rounded-xl transition"
+                                    title="取消收藏">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div v-if="favorites.length === 0" class="text-center py-10 text-slate-300 text-sm">
+                        还没有收藏任何歌曲
+                    </div>
+                </div>
+
+                <div class="mt-6 space-y-3">
+                    <button @click="addAllFavoritesToQueue"
+                            :disabled="favorites.length === 0"
+                            class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 active:scale-95 transition shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:active:scale-100">
+                        一键加入待唱列表
+                    </button>
+                </div>
+            </div>
+        </div>
+    </transition>
+
+    <transition name="modal-fade">
         <div v-if="showSettings"
              class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
              @click.self="showSettings = false">
@@ -587,7 +666,7 @@
     </transition>
 
 
-    <div class="fixed bottom-0 left-0 right-0 z-40 px-4 pb-6 pt-2 bg-white/80 backdrop-blur-md border-t border-slate-100 flex items-center justify-between max-w-md mx-auto">
+    <div class="fixed bottom-0 left-0 right-0 z-40 px-4 pb-2 pt-2 bg-white/80 backdrop-blur-md border-t border-slate-100 flex items-center justify-between max-w-md mx-auto">
         <button @click="handleRefresh" class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90">
             <svg :class="{ 'animate-spin-once': isRefreshing }"
                     width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -596,12 +675,17 @@
             </svg>
         </button>
 
-        <button @click="showAddModal = true"
-                class="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-xl shadow-indigo-200 flex items-center justify-center -translate-y-4 border-4 border-white active:scale-95 transition-transform">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-            </svg>
-        </button>
+        <div class="flex flex-col items-center">
+            <button @click="showAddModal = true"
+                    class="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-xl shadow-indigo-200 flex items-center justify-center -translate-y-5 border-4 border-white active:scale-95 transition-transform">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                </svg>
+            </button>
+            <a href="https://github.com/birchtree2/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
+                GitHub @birchtree2
+            </a>
+        </div>
 
         <button @click="showShuffleConfirm = true" class="p-3 text-slate-400 hover:text-orange-500 transition active:scale-90">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
@@ -662,6 +746,8 @@
             const deletingSong = ref(null);
             const editingSong = ref(null);
             const editForm = ref({title: '', url: ''});
+            const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
+            const showFavoritesModal = ref(false);
             /** @type {import('vue').Ref<Song[]>} */
             const songs = ref([]);
             const nickname = ref(localStorage.getItem('ktv_nickname') || '');
@@ -694,6 +780,68 @@
             watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
             watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
             watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
+            watch(favorites, (val) => {
+                localStorage.setItem('ktv_favorites', JSON.stringify(val));
+            }, { deep: true });
+
+            const isFavorited = (song) => {
+                return favorites.value.some(f => f.url === song.url);
+            };
+
+            const toggleFavorite = (song) => {
+                const index = favorites.value.findIndex(f => f.url === song.url);
+                if (index > -1) {
+                    favorites.value.splice(index, 1);
+                } else {
+                    favorites.value.push({
+                        id: 'fav-' + Math.random().toString(36).slice(2, 11),
+                        title: song.title,
+                        url: song.url
+                    });
+                }
+            };
+
+            const addFavoriteToQueue = async (fav) => {
+                const newSong = {
+                    id: 's-' + Math.random().toString(36).slice(2, 11),
+                    title: fav.title,
+                    url: fav.url,
+                    addedBy: nickname.value,
+                    isNew: true
+                };
+                const effectiveLen = songs.value.filter(s => !s.isDeleting).length;
+                songs.value.push(newSong);
+                const success = await commitOp({
+                    song: newSong,
+                    toIndex: effectiveLen
+                });
+                if (!success) await load();
+            };
+
+            const addAllFavoritesToQueue = async () => {
+                if (favorites.value.length === 0) return;
+                
+                // 复制一份收藏列表，避免在循环中被修改影响逻辑
+                const toAdd = [...favorites.value];
+                showFavoritesModal.value = false;
+
+                for (const fav of toAdd) {
+                    const newSong = {
+                        id: 's-' + Math.random().toString(36).slice(2, 11),
+                        title: fav.title,
+                        url: fav.url,
+                        addedBy: nickname.value,
+                        isNew: true
+                    };
+                    const effectiveLen = songs.value.filter(s => !s.isDeleting).length;
+                    songs.value.push(newSong);
+                    await commitOp({
+                        song: newSong,
+                        toIndex: effectiveLen
+                    });
+                }
+                await load();
+            };
 
             async function getHash(songs) {
                 if (!songs || songs.length === 0) return "EMPTY_LIST_HASH";
@@ -1266,7 +1414,9 @@
                 jumpMode, autoJump, showAddModal, autoInput,
                 handleAutoRecognize, handleAdd, showShuffleConfirm,
                 shuffleSongs,handleRefresh,isRefreshing,
-                nickname, showNicknameModal, tempNickname, saveNickname
+                nickname, showNicknameModal, tempNickname, saveNickname,
+                favorites, showFavoritesModal, isFavorited, toggleFavorite,
+                addFavoriteToQueue, addAllFavoritesToQueue
             }
         }
     }).mount('#app')
