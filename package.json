@@ -8,6 +8,7 @@
     "main": "lib/index.js",
     "typings": "lib/index.d.ts",
     "scripts": {
+        "test": "jest",
         "dev-watch": "cross-env NODE_ENV=development tsx watch ./src/index.ts",
         "dev": "cross-env NODE_ENV=development tsx ./src/index.ts",
         "start-ts": "cross-env NODE_ENV=production tsx ./src/index.ts",

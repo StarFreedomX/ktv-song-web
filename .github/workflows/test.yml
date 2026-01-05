@@ -1,0 +1,41 @@
+name: Node.js CI
+
+# 触发条件：当代码推送到 master 分支，或者有人提交 Pull Request 到 master 时触发
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        # 这里指定 Node.js 版本。
+        # 虽然你的 types 引用了 node 25，但建议 CI 使用稳定版 (LTS) 如 20 或 22
+        node-version: [20.x, 22.x]
+
+    steps:
+    # 1. 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # 2. 安装 Node.js 环境
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm' # 自动缓存 npm 依赖，加快构建速度
+
+    # 3. 安装依赖 (npm ci 比 npm install 更适合 CI 环境，它严格依据 package-lock.json)
+    - name: Install dependencies
+      run: npm ci
+      # 如果你没有 package-lock.json，请改用: npm install
+
+    # 4. 执行测试
+    # 这会调用你在 package.json 中配置的 "test": "jest"
+    # 它会自动读取你提交的 jest.config.js 并编译 TypeScript
+    - name: Run tests
+      run: npm test
