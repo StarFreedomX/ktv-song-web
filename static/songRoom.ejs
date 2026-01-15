@@ -206,6 +206,12 @@
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
+                <button @click="hostMode = !hostMode"
+                        :class="['px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5',
+                         hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
+                    <span :class="['w-1.5 h-1.5 rounded-full', hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
+                    主机模式 {{ hostMode ? 'ON' : 'OFF' }}
+                </button>
                 <button @click="showFavoritesModal = true"
                         class="px-3 py-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-red-500 transition"
                         >
@@ -826,14 +832,15 @@
             const isRefreshing = ref(false);
             const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
             const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
+            const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
             const commitApiUrl = "api/songOperation"
             const loadSongListUrl = "api/songListInfo"
 
             watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
             watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
             watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
+            watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
             watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
-
             // 逻辑拆分：待唱列表和已唱列表
             const queueList = computed({
                 get: () => songs.value.filter(s => !s.state || s.state === 'queued'),
@@ -843,6 +850,22 @@
                 }
             });
             const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+
+            // 监听正在播放歌曲的变化
+            watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
+                // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
+                if (hostMode.value && newSong && (!oldSong || newSong.id !== oldSong.id)) {
+                    console.log('主机模式：检测到新歌，正在自动跳转...', newSong.title);
+
+                    if (newSong.url) {
+                        // 主机模式下直接跳转，不弹窗确认
+                        // 为了保证稳定性，延迟 800ms 等待数据同步完成
+                        setTimeout(() => {
+                            window.location.href = newSong.url;
+                        }, 800);
+                    }
+                }
+            }, { deep: true });
 
             const isFavorited = (song) => {
                 return favorites.value.some(f => f.url === song.url);
@@ -1305,46 +1328,49 @@
                 }
             };
 
+            const executeJump = (url) => {
+                // 尝试从已有的 URL 中提取 page 参数和 BV 号
+                // 此时的 url 可能是后端传来的 bilibili://video/BVxxx?page=1
+                let bvId = null;
+                let pageIdx = null;
+
+                const bvMatch = url.match(/BV[a-zA-Z0-9]{10}/i);
+                if (bvMatch) {
+                    bvId = bvMatch[0];
+                    const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
+                    pageIdx = urlObj.searchParams.get('page');
+                }
+
+                if (jumpMode.value === 'app') {
+                    // --- App ---
+                    // 如果后端已经处理好了协议，直接跳转即可
+                    if (url.startsWith('bilibili://')) {
+                        window.location.href = url;
+                    } else if (bvId) {
+                        // 如果拿到的还是原始链接
+                        window.location.href = `bilibili://video/${bvId}${pageIdx ? `?page=${pageIdx}` : ''}`;
+                    } else {
+                        window.location.href = url;
+                    }
+                } else {
+                    // --- Web ---
+                    if (bvId) {
+                        // H5 端的分 P 参数通常是 p=(page+1)
+                        // 这里的处理是为了让 Web 端也能跳到对应的分 P
+                        const pForWeb = pageIdx ? parseInt(pageIdx) + 1 : null;
+                        // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
+                        const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;
+                        window.open(webUrl, '_blank');
+                    } else {
+                        window.open(url, '_blank');
+                    }
+                }
+            }
+
             const confirmJump = () => {
                 if (pendingJumpUrl.value) {
                     const url = pendingJumpUrl.value;
-
-                    // 尝试从已有的 URL 中提取 page 参数和 BV 号
-                    // 此时的 url 可能是后端传来的 bilibili://video/BVxxx?page=1
-                    let bvId = null;
-                    let pageIdx = null;
-
-                    const bvMatch = url.match(/BV[a-zA-Z0-9]{10}/i);
-                    if (bvMatch) {
-                        bvId = bvMatch[0];
-                        const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
-                        pageIdx = urlObj.searchParams.get('page');
-                    }
-
-                    if (jumpMode.value === 'app') {
-                        // --- App ---
-                        // 如果后端已经处理好了协议，直接跳转即可
-                        if (url.startsWith('bilibili://')) {
-                            window.location.href = url;
-                        } else if (bvId) {
-                            // 如果拿到的还是原始链接
-                            window.location.href = `bilibili://video/${bvId}${pageIdx ? `?page=${pageIdx}` : ''}`;
-                        } else {
-                            window.location.href = url;
-                        }
-                    } else {
-                        // --- Web ---
-                        if (bvId) {
-                            // H5 端的分 P 参数通常是 p=(page+1)
-                            // 这里的处理是为了让 Web 端也能跳到对应的分 P
-                            const pForWeb = pageIdx ? parseInt(pageIdx) + 1 : null;
-                            // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
-                            const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;
-                            window.open(webUrl, '_blank');
-                        } else {
-                            window.open(url, '_blank');
-                        }
-                    }
+                    executeJump(url);
                     pendingJumpUrl.value = null;
                 }
             };
@@ -1520,7 +1546,7 @@
                 saveEdit, editingSong, editForm, moveToTop, undoSung,
                 deletingSong, confirmDelete, pendingJumpUrl,
                 jumpSongTitle, confirmJump, showSettings,
-                jumpMode, autoJump, showAddModal, autoInput,
+                jumpMode, autoJump, showAddModal, autoInput, hostMode,
                 handleAutoRecognize, handleAdd, showShuffleConfirm,
                 shuffleSongs,handleRefresh,isRefreshing,
                 nickname, showNicknameModal, tempNickname, saveNickname,
