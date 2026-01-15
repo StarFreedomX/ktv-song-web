@@ -148,7 +148,7 @@
             border-width: 0;
         }
 
-        .song-card:hover .font-bold {
+        .song-card:hover .flex-1 .font-bold {
             color: #4f46e5; /* indigo-600 */
             text-decoration: underline;
         }
@@ -200,7 +200,7 @@
 <body class="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-900">
 <div id="app" class="max-w-md mx-auto" v-cloak>
     <header class="mb-6 flex justify-between items-start">
-        <div>
+        <div @click="backHome()" class="cursor-pointer group">
             <h1 class="text-3xl font-black text-indigo-600">KTV<br/>Queue</h1>
             <p class="text-slate-400">房间ID: <%= roomId %></p>
         </div>
@@ -403,7 +403,14 @@
                 </svg>
             </button>
 
-            <div class="text-[10px] font-bold text-slate-300 bg-slate-100 px-2 py-1 rounded-lg">已唱</div>
+            <button @click="reAdd(element)"
+                    class="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg active:bg-indigo-600 active:text-white transition-colors group">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                <span class="text-[10px] font-bold">再唱</span>
+            </button>
         </div>
         <div v-if="historyList.length <= 1" class="text-center py-20 text-slate-300 text-sm">
             暂无更多历史记录
@@ -1049,6 +1056,12 @@
                 autoInput.value = ''; // 清空识别框
             };
 
+            const reAdd = async (song) => {
+                form.value.title = song.title;
+                form.value.url = song.url;
+                await handleAdd();
+            };
+
             const handleAutoRecognize = () => {
                 let raw = autoInput.value.trim();
                 if (!raw) return;
@@ -1375,6 +1388,10 @@
                 }
             };
 
+            const backHome = () => {
+                window.location.href = './';
+            }
+
             const onDragChange = async (evt) => {
                 isDragging.value = false;
                 if (evt.moved) {
@@ -1541,10 +1558,10 @@
 
             return {
                 songs, queueList, historyList, nextSong,
-                form, add, remove, load, onDragChange,
+                form, add, remove, load, onDragChange, reAdd,
                 lastHash, activeTab, isDragging, goToLink, startEdit,
                 saveEdit, editingSong, editForm, moveToTop, undoSung,
-                deletingSong, confirmDelete, pendingJumpUrl,
+                deletingSong, confirmDelete, pendingJumpUrl, backHome,
                 jumpSongTitle, confirmJump, showSettings,
                 jumpMode, autoJump, showAddModal, autoInput, hostMode,
                 handleAutoRecognize, handleAdd, showShuffleConfirm,
