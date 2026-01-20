@@ -452,14 +452,15 @@
 
     <transition name="modal-fade">
         <div v-if="showAddModal"
-             class="fixed inset-0 z-50 flex items-center justify-center p-4
+             class="fixed inset-0 z-[70] flex items-center justify-center p-4
            bg-slate-900/40 backdrop-blur-sm"
-             @click.self="showAddModal = false">
-            <div class="modal-container
+             @click.self="showAddModal = false; isAddingToFavorites = false;"> <div class="modal-container
              bg-white w-full max-w-sm
              rounded-[2.5rem] shadow-2xl
              p-6 space-y-4">
-                <h3 class="text-xl font-black text-slate-800 px-2">添加新歌曲</h3>
+                <h3 class="text-xl font-black text-slate-800 px-2">
+                    {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
+                </h3>
 
                 <div class="space-y-1">
                     <label class="text-[10px] font-bold text-indigo-400 ml-1 uppercase tracking-widest">
@@ -489,14 +490,14 @@
                 </div>
 
                 <div class="flex gap-3 pt-2">
-                    <button @click="showAddModal = false"
+                    <button @click="showAddModal = false; isAddingToFavorites = false;"
                             class="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl transition">
                         取消
                     </button>
                     <button @click="handleAdd"
                             class="flex-1 py-3 bg-indigo-600 text-white
                  font-bold rounded-xl shadow-lg shadow-indigo-200 transition">
-                        确认添加
+                        {{ isAddingToFavorites ? '确认收藏' : '确认添加' }}
                     </button>
                 </div>
             </div>
@@ -608,6 +609,12 @@
             <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 flex flex-col max-h-[80vh]">
                 <div class="flex justify-between items-center mb-4">
                     <h3 class="text-xl font-bold text-slate-800">我的收藏 ({{ favorites.length }})</h3>
+                    <button @click="openAddFavoriteModal" class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                    </button>
                     <button @click="showFavoritesModal = false" class="text-slate-400 hover:text-slate-600">
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -840,6 +847,7 @@
             const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
             const showFavoritesModal = ref(false);
             const favSearchQuery = ref('');
+            const isAddingToFavorites = ref(false); // 标记当前弹窗是否为“添加收藏”
             /** @type {import('vue').Ref<Song[]>} */
             const songs = ref([]);
             const nickname = ref(localStorage.getItem('ktv_nickname') || '');
@@ -935,30 +943,10 @@
                 if (!success) await load();
             };
 
-            /*const addAllFavoritesToQueue = async () => {
-                if (favorites.value.length === 0) return;
-
-                // 复制一份收藏列表，避免在循环中被修改影响逻辑
-                const toAdd = [...favorites.value];
-                showFavoritesModal.value = false;
-
-                for (const fav of toAdd) {
-                    const newSong = {
-                        id: 's-' + Math.random().toString(36).slice(2, 11),
-                        title: fav.title,
-                        url: fav.url,
-                        addedBy: nickname.value,
-                        isNew: true
-                    };
-                    const effectiveLen = songs.value.filter(s => !s.isDeleting).length;
-                    songs.value.push(newSong);
-                    await commitOp({
-                        song: newSong,
-                        toIndex: effectiveLen
-                    });
-                }
-                await load();
-            };*/
+            const openAddFavoriteModal = () => {
+                isAddingToFavorites.value = true;
+                showAddModal.value = true; // 复用原有的添加歌曲弹窗
+            };
 
             const exportFavorites = () => {
                 const dataStr = JSON.stringify(favorites.value, null, 2);
@@ -1078,7 +1066,26 @@
 
             const handleAdd = async () => {
                 if (!form.value.title || !form.value.url) return;
-                await add();
+                if (isAddingToFavorites.value) {
+                    // 如果是添加收藏逻辑
+                    const newFav = {
+                        id: Date.now(),
+                        title: form.value.title || '未命名歌曲',
+                        url: await parseBilibiliShortLink(form.value.url)
+                    };
+                    // 检查是否已存在
+                    if (!favorites.value.some(f => f.url === newFav.url)) {
+                        favorites.value.push(newFav);
+                    }
+                    showAddModal.value = false;
+                    isAddingToFavorites.value = false; // 重置状态
+                    // 重置表单
+                    form.value.title = '';
+                    form.value.url = '';
+                } else {
+                    // 原有的添加待唱列表逻辑
+                    await add();
+                }
                 showAddModal.value = false;
                 autoInput.value = ''; // 清空识别框
             };
@@ -1088,6 +1095,27 @@
                 form.value.url = song.url;
                 await handleAdd();
             };
+
+            const parseBilibiliShortLink = async (link) => {
+                if (!link) return;
+                if (link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i)){
+                    try {
+                        const res = await fetch(`api/parseLink`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                link
+                            })
+                        }).then(r => r.json());
+                        if (res.success){
+                            return res.link;
+                        }
+                    } catch (e) {
+                        console.error("Next Song Error:", e);
+                    }
+                }
+                return link;
+            }
 
             const handleAutoRecognize = () => {
                 let raw = autoInput.value.trim();
@@ -1528,7 +1556,7 @@
             async function shuffleSongs() {
                 showShuffleConfirm.value = false;
                 try {
-                    const response = await fetch(`/api/shuffle?roomId=${roomId}`, { method: 'POST' });
+                    const response = await fetch(`api/shuffle?roomId=${roomId}`, { method: 'POST' });
                     const result = await response.json();
                     if (result.success) {
                         load(); // 重新加载列表
@@ -1547,7 +1575,7 @@
 
             const nextSong = async () => {
                 try {
-                    const res = await fetch(`/api/nextSong?roomId=${roomId}`, {
+                    const res = await fetch(`api/nextSong?roomId=${roomId}`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify({
@@ -1597,7 +1625,8 @@
                 favorites, showFavoritesModal, isFavorited, toggleFavorite,
                 addFavoriteToQueue, //addAllFavoritesToQueue,
                 exportFavorites, handleImportFile, fileInput,
-                favSearchQuery, filteredFavorites,
+                favSearchQuery, filteredFavorites,isAddingToFavorites,
+                openAddFavoriteModal,
             }
         }
     }).mount('#app')

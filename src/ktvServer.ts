@@ -171,6 +171,21 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         }
     });
 
+    //解析b站短链接
+    router.post('/api/parseLink', async (koaCtx) => {
+        let { link } = koaCtx.request.body as { link: string };
+        ktvLogger.debug('parse link: ', link)
+        // 如果是 B 站链接
+        if (link && (link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i))) {
+            const biliData = await resolveBilibiliData(link);
+            if (biliData) {
+                // 更新 URL
+                link = biliData.url;
+            }
+        }
+        koaCtx.body = { success: true, link };
+    });
+
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds} = koaCtx.query;
@@ -186,7 +201,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         // ktvLogger.debug(song?.title,'POST AT:', Date.now())
 
         // 如果是 B 站链接
-        if (song && song.url && (song.url.includes('b23.tv') || song.url.includes('bilibili.com'))) {
+        if (song && song.url && (song.url.includes('b23.tv') || song.url.includes('bilibili.com') || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
             const biliData = await resolveBilibiliData(song.url);
             if (biliData) {
                 // 更新 URL
