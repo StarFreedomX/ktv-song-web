@@ -616,8 +616,24 @@
                     </button>
                 </div>
 
+                <div class="mb-4 relative">
+                    <input v-model="favSearchQuery"
+                           type="text"
+                           placeholder="搜索收藏的歌曲..."
+                           class="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 transition"
+                    >
+                    <div v-if="favSearchQuery"
+                         @click="favSearchQuery = ''"
+                         class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer hover:text-slate-600">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </div>
+                </div>
+
                 <div class="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-                    <div v-for="fav in favorites" :key="fav.id" class="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center group">
+                    <div v-for="fav in filteredFavorites" :key="fav.id" class="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center group">
                         <div class="flex-1 min-w-0" @click="goToLink(fav)"> <div class="font-bold text-slate-700 text-sm truncate">{{ fav.title }}</div>
                             <div class="text-[10px] text-slate-400 truncate">{{ fav.url }}</div>
                         </div>
@@ -642,17 +658,13 @@
                             </button>
                         </div>
                     </div>
-                    <div v-if="favorites.length === 0" class="text-center py-10 text-slate-300 text-sm">
-                        还没有收藏任何歌曲
+
+                    <div v-if="filteredFavorites.length === 0" class="text-center py-10 text-slate-300 text-sm">
+                        {{ favSearchQuery ? '没有找到匹配的歌曲' : '还没有收藏任何歌曲' }}
                     </div>
                 </div>
 
                 <div class="mt-6 space-y-3">
-                    <!--<button @click="addAllFavoritesToQueue"
-                            :disabled="favorites.length === 0"
-                            class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 active:scale-95 transition shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:active:scale-100">
-                        全部加入待唱列表
-                    </button>-->
                     <div class="flex gap-3">
                         <button @click="exportFavorites"
                                 :disabled="favorites.length === 0"
@@ -827,6 +839,7 @@
             const editForm = ref({title: '', url: ''});
             const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
             const showFavoritesModal = ref(false);
+            const favSearchQuery = ref('');
             /** @type {import('vue').Ref<Song[]>} */
             const songs = ref([]);
             const nickname = ref(localStorage.getItem('ktv_nickname') || '');
@@ -861,6 +874,16 @@
                 }
             });
             const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+            const filteredFavorites = computed(() => {
+                if (!favSearchQuery.value.trim()) {
+                    return favorites.value; //
+                }
+                const query = favSearchQuery.value.toLowerCase();
+                return favorites.value.filter(fav =>
+                    fav.title.toLowerCase().includes(query) ||
+                    fav.url.toLowerCase().includes(query)
+                ); //
+            });
 
             // 监听正在播放歌曲的变化
             watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
@@ -1573,7 +1596,8 @@
                 nickname, showNicknameModal, tempNickname, saveNickname,
                 favorites, showFavoritesModal, isFavorited, toggleFavorite,
                 addFavoriteToQueue, //addAllFavoritesToQueue,
-                exportFavorites, handleImportFile, fileInput
+                exportFavorites, handleImportFile, fileInput,
+                favSearchQuery, filteredFavorites,
             }
         }
     }).mount('#app')
