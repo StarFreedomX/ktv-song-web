@@ -1,5 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
+import process from "node:process";
 import ejs from 'ejs';
 import ktvLogger from "@/logger";
 import Koa from "koa";
@@ -273,6 +274,17 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         }
     });
 
+    // 托管 favicon.ico
+    router.get('/favicon.ico', async (koaCtx) => {
+        const iconPath = path.resolve(staticDir, 'favicon.ico');
+        if (fs.existsSync(iconPath)) {
+            koaCtx.type = 'image/x-icon';
+            koaCtx.body = fs.readFileSync(iconPath);
+        } else {
+            koaCtx.status = 404;
+        }
+    });
+
     // WebUI 托管
     router.get('/:roomId', async (koaCtx) => {
         if (process.env.NODE_ENV === "development") {
@@ -316,6 +328,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>进入 KTV 房间</title>
+        <link rel="icon" href="favicon.ico" type="image/x-icon">
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             @keyframes slideUp {
