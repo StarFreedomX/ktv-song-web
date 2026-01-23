@@ -2,6 +2,17 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import draggable from 'vuedraggable';
 import { initUtils } from "./utils";
+import ShuffleConfirmModal from "./components/ShuffleConfirmModal.vue";
+import SettingsModal from "./components/SettingsModal.vue";
+import FavoritesModal from "./components/FavoritesModal.vue";
+import JumpConfirmModal from "./components/JumpConfirmModal.vue";
+import DeleteConfirmModal from "./components/DeleteConfirmModal.vue";
+import EditSongModal from "./components/EditSongModal.vue";
+import AddSongModal from "./components/AddSongModal.vue";
+import NicknameModal from "./components/NicknameModal.vue";
+import BottomNav from "./components/BottomNav.vue";
+import QueueList from "./components/QueueList.vue";
+import HistoryList from "./components/HistoryList.vue";
 
 const pathParts = window.location.pathname.split('/');
 const roomIdFromUrl = pathParts.at(-1) || '';
@@ -25,6 +36,7 @@ const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
 const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
 
 // 控制页面元素的变量
+/** @type {import('vue').Ref<String>} */
 const activeTab = ref(localStorage.getItem('ktv_active_tab') || 'queue');
 const isDragging = ref(false);
 const deletingSong = ref(null);
@@ -518,15 +530,19 @@ const handleRefresh = async () => {
 };
 
 // 保存逻辑
-const saveEdit = async () => {
-    if (!editForm.value.title || !editForm.value.url) return;
+const saveEdit = async (updatedData) => {
+    // 检查传进来的 updatedData 是否有值
+    if (!updatedData || !updatedData.title || !updatedData.url) return;
 
     const song = editingSong.value;
+    if (!song) return;
     const index = songs.value.findIndex(s => s.id === song.id);
     const oldData = { title: song.title, url: song.url };
-    // 乐观更新 UI
-    song.title = editForm.value.title;
-    song.url = editForm.value.url;
+
+    // 乐观更新UI
+    song.title = updatedData.title;
+    song.url = updatedData.url;
+
     if (index !== -1) {
         const success = await commitOp({
             song: song, toIndex: index // 原位覆盖更新
@@ -641,528 +657,102 @@ onUnmounted(() => clearInterval(timer))
     </div>
 
     <!-- 待唱列表 -->
-    <div v-show="activeTab === 'queue'">
-        <draggable
-            v-model="queueList"
-            item-key="id"
-            handle=".drag-handle"
-            ghost-class="ghost-card"
-            :animation="300"
-            @start="isDragging = true"
-            @end="isDragging = false"
-            @change="onDragChange"
-        >
-            <template #item="{ element }">
-                <div :key="element.id"
-                     @click="goToLink(element)"
-                     :is-deleting="element.isDeleting ? 'true' : 'false'"
-                     :class="['song-card bg-white mb-3 p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center group',
-                 element.isNew ? 'slide-in-item' : '',
-                 element.isNewActive ? 'slide-in-active' : '',
-                 element.isDeleting ? 'slide-out-item' : '',
-                 element.isMoved ? 'highlight-change' : '',
-                 element.isTop ? 'highlight-top' : '',
-                 element.isAffected ? 'highlight-affected' : '']">
-
-                    <div class="drag-handle p-2 mr-2 text-slate-300 hover:text-indigo-500 transition" @click.stop>
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-                             stroke-linecap="round">
-                            <line x1="3" y1="12" x2="21" y2="12"></line>
-                            <line x1="3" y1="6" x2="21" y2="6"></line>
-                            <line x1="3" y1="18" x2="21" y2="18"></line>
-                        </svg>
-                    </div>
-
-                    <div class="flex-1 min-w-0 pr-2">
-                        <div class="text-sm font-bold text-slate-700 truncate group-hover:text-indigo-600 transition leading-tight">
-                            {{ element.title }}
-                        </div>
-                        <div class="flex items-center gap-1.5 mt-0.5">
-                    <span v-if="element.addedBy" class="shrink-0 text-[9px] px-1 bg-slate-100 text-slate-400 rounded font-medium">
-                        {{ element.addedBy }}
-                    </span>
-                            <div class="text-[11px] text-slate-400 truncate opacity-70">{{ element.url }}</div>
-                        </div>
-                    </div>
-
-                    <button @click.stop="toggleFavorite(element)"
-                            :class="['p-2 transition', isFavorited(element) ? 'text-red-500' : 'text-slate-300 hover:text-red-400']"
-                            title="收藏">
-                        <svg width="18" height="18" viewBox="0 0 24 24" :fill="isFavorited(element) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"
-                             stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                        </svg>
-                    </button>
-
-                    <button @click.stop="moveToTop(element)" class="p-1.5 text-slate-300 hover:text-orange-500 transition">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M12 19V5M5 12l7-7 7 7"/>
-                        </svg>
-                    </button>
-
-                    <button @click.stop="startEdit(element)" class="p-1.5 text-slate-300 hover:text-indigo-500 transition">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                    </button>
-
-                    <button @click.stop="remove(element)" class="p-2 text-slate-300 hover:text-red-500 transition">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                             stroke-linecap="round">
-                            <polyline points="3 6 5 6 21 6"></polyline>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </button>
-                </div>
-            </template>
-        </draggable>
-        <div v-if="queueList.length === 0" class="text-center py-20 text-slate-300">
-            待唱列表是空的
-        </div>
-    </div>
+    <QueueList
+        :active="activeTab === 'queue'"
+        v-model:queueList="queueList"
+        :is-favorited="isFavorited"
+        @drag-start="isDragging = true"
+        @end="isDragging = false"
+        @drag-change="onDragChange"
+        @go-to="goToLink"
+        @toggle-favorite="toggleFavorite"
+        @move-top="moveToTop"
+        @edit="startEdit"
+        @remove="remove"
+    />
 
     <!-- 已唱列表 -->
-    <div v-show="activeTab === 'history'">
-        <div v-for="element in historyList.slice(0, -1).reverse()" :key="element.id"
-             class="song-card bg-slate-50/50 mb-2 px-5 py-3 rounded-2xl border border-slate-200 flex items-center group opacity-90">
-            <div class="flex-1 min-w-0" @click="goToLink(element)">
-                <div class="text-sm font-bold text-slate-500 truncate group-hover:text-indigo-600 transition">
-                    {{ element.title }}
-                </div>
-                <div class="flex items-center gap-2 mt-0.5">
-                <span v-if="element.addedBy" class="shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-medium">
-                    {{ element.addedBy }}
-                </span>
-                    <div class="text-[10px] text-slate-300 truncate">{{ element.url }}</div>
-                </div>
-            </div>
+    <HistoryList
+        :active="activeTab === 'history'"
+        :history-list="historyList"
+        :is-favorited="isFavorited"
+        @go-to="goToLink"
+        @toggle-favorite="toggleFavorite"
+        @undo="undoSung"
+        @re-add="reAdd"
+    />
 
-            <button @click.stop="toggleFavorite(element)"
-                    :class="['p-2 transition', isFavorited(element) ? 'text-red-500' : 'text-slate-300 hover:text-red-400']"
-                    title="收藏">
-                <svg width="15" height="15" viewBox="0 0 24 24" :fill="isFavorited(element) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                </svg>
-            </button>
+    <NicknameModal
+        v-model="showNicknameModal"
+        v-model:tempNickname="tempNickname"
+        :has-nickname="!!nickname"
+        @save="saveNickname"
+    />
 
-            <button @click.stop="undoSung(element)"
-                    class="mr-2 p-2 text-slate-300 hover:text-indigo-500 transition"
-                    title="撤回到待唱顶部">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                    <path d="M3 10h10a8 8 0 0 1 8 8v2M3 10l6-6M3 10l6 6"/>
-                </svg>
-            </button>
+    <AddSongModal
+        v-model="showAddModal"
+        v-model:isAddingToFavorites="isAddingToFavorites"
+        v-model:autoInput="autoInput"
+        v-model:form="form"
+        @auto-recognize="handleAutoRecognize"
+        @submit="handleAdd"
+    />
 
-            <button @click="reAdd(element)"
-                    class="flex items-center gap-1 px-2 py-1 bg-indigo-50 text-indigo-600 rounded-lg active:bg-indigo-600 active:text-white transition-colors group">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                </svg>
-                <span class="text-[10px] font-bold">再唱</span>
-            </button>
-        </div>
-        <div v-if="historyList.length <= 1" class="text-center py-20 text-slate-300 text-sm">
-            暂无更多历史记录
-        </div>
-    </div>
+    <EditSongModal
+        v-model="editingSong"
+        @save="saveEdit"
+    />
 
-    <transition name="modal-fade">
-        <div v-if="showNicknameModal"
-             class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md"
-             @click.self="nickname ? showNicknameModal = false : null">
-            <div class="modal-container bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-8 space-y-6 text-center">
-                <div class="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto">
-                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                        <circle cx="12" cy="7" r="4"></circle>
-                    </svg>
-                </div>
-                <div class="space-y-2">
-                    <h3 class="text-2xl font-black text-slate-800">设置你的昵称</h3>
-                    <p class="text-slate-400 text-sm">让大家知道是谁点的歌吧！</p>
-                </div>
-                <input v-model="tempNickname"
-                       @keyup.enter="saveNickname"
-                       class="w-full px-6 py-4 bg-slate-50 rounded-2xl outline-none focus:ring-2 focus:ring-indigo-400 text-center text-lg font-bold transition"
-                       placeholder="输入昵称..."
-                       autoFocus>
-                <button @click="saveNickname"
-                        :disabled="!tempNickname.trim()"
-                        class="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200 transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
-                    开始点歌
-                </button>
-            </div>
-        </div>
-    </transition>
+    <DeleteConfirmModal
+        v-model="deletingSong"
+        @confirm="confirmDelete"
+    />
 
-    <transition name="modal-fade">
-        <div v-if="showAddModal"
-             class="fixed inset-0 z-[70] flex items-center justify-center p-4
-       bg-slate-900/40 backdrop-blur-sm"
-             @click.self="showAddModal = false; isAddingToFavorites = false;"> <div class="modal-container
-         bg-white w-full max-w-sm
-         rounded-[2.5rem] shadow-2xl
-         p-6 space-y-4">
-            <h3 class="text-xl font-black text-slate-800 px-2">
-                {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
-            </h3>
+    <JumpConfirmModal
+        v-model="pendingJumpUrl"
+        :song-title="jumpSongTitle"
+        @confirm="confirmJump"
+    />
 
-            <div class="space-y-1">
-                <label class="text-[10px] font-bold text-indigo-400 ml-1 uppercase tracking-widest">
-                    智能提取 (粘贴B站分享文案)
-                </label>
-                <textarea v-model="autoInput" @input="handleAutoRecognize"
-                          class="w-full px-4 py-3 bg-indigo-50/50 rounded-2xl outline-none
-             border-2 border-transparent focus:border-indigo-200
-             transition text-sm h-24 resize-none"
-                          placeholder="在这里粘贴..."></textarea>
-            </div>
+    <FavoritesModal
+        v-model="showFavoritesModal"
+        v-model:searchQuery="favSearchQuery"
+        :favorites="favorites"
+        :filteredFavorites="filteredFavorites"
+        @add-new="isAddingToFavorites = true; editingSong = null; showAddModal = true"
+        @edit="startEdit"
+        @remove="toggleFavorite"
+        @enqueue="addFavoriteToQueue"
+        @export="exportFavorites"
+        @import="handleImportFile"
+        @go-to="goToLink"
+    />
 
-            <div class="relative flex items-center justify-center py-2">
-                <div class="w-full border-t border-slate-100"></div>
-                <span class="absolute bg-white px-3 text-[10px] font-bold text-slate-300">
-        手动输入
-    </span>
-            </div>
+    <SettingsModal
+        v-model="showSettings"
+        v-model:jumpMode="jumpMode"
+        v-model:autoJump="autoJump"
+        :nickname="nickname"
+        @edit-nickname="tempNickname = nickname; showNicknameModal = true"
+    />
 
-            <div class="space-y-3">
-                <input v-model="form.title"
-                       class="w-full px-4 py-3 bg-slate-50 rounded-xl
-             outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="歌曲标题">
-                <input v-model="form.url"
-                       class="w-full px-4 py-3 bg-slate-50 rounded-xl
-             outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="跳转链接">
-            </div>
+    <ShuffleConfirmModal
+        v-model="showShuffleConfirm"
+        @confirm="shuffleSongs"
+    />
 
-            <div class="flex gap-3 pt-2">
-                <button @click="showAddModal = false; isAddingToFavorites = false;"
-                        class="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl transition">
-                    取消
-                </button>
-                <button @click="handleAdd"
-                        class="flex-1 py-3 bg-indigo-600 text-white
-             font-bold rounded-xl shadow-lg shadow-indigo-200 transition">
-                    {{ isAddingToFavorites ? '确认收藏' : '确认添加' }}
-                </button>
-            </div>
-        </div>
-        </div>
-    </transition>
+    <!--    底部导航栏       -->
+    <BottomNav
+        :is-refreshing="isRefreshing"
+        :history-empty="historyList.length === 0"
+        :queue-empty="queueList.length === 0"
+        @refresh="handleRefresh"
+        @undo="undoSung(historyList[historyList.length - 1])"
+        @add="showAddModal = true"
+        @next="nextSong"
+        @shuffle="showShuffleConfirm = true"
+    />
 
-    <transition name="modal-fade">
-        <div v-if="editingSong"
-             class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="editingSong = null">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-4">
-                <h3 class="text-xl font-bold text-slate-800">编辑歌曲信息</h3>
-
-                <div class="space-y-3">
-                    <div>
-                        <label class="text-xs font-bold text-slate-400 ml-1 uppercase">歌曲名称</label>
-                        <input v-model="editForm.title"
-                               class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-400 transition"
-                               placeholder="输入标题...">
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold text-slate-400 ml-1 uppercase">跳转链接</label>
-                        <input v-model="editForm.url"
-                               class="w-full px-4 py-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-400 transition"
-                               placeholder="https://...">
-                    </div>
-                </div>
-
-                <div class="flex space-x-3 pt-2">
-                    <button @click="editingSong = null"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">
-                        取消
-                    </button>
-                    <button @click="saveEdit"
-                            class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition">
-                        保存修改
-                    </button>
-                </div>
-            </div>
-        </div>
-    </transition>
-
-    <transition name="modal-fade">
-        <div v-if="deletingSong"
-             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="deletingSong = null">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-6">
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2" stroke-linecap="round">
-                            <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-800">确认删除？</h3>
-                    <p class="text-slate-500 mt-2">歌曲 <span
-                        class="font-semibold text-slate-700">"{{ deletingSong.title }}"</span> 将被移除。</p>
-                </div>
-                <div class="flex space-x-3">
-                    <button @click="deletingSong = null"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">
-                        返回
-                    </button>
-                    <button @click="confirmDelete"
-                            class="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition">
-                        确认移除
-                    </button>
-                </div>
-            </div>
-        </div>
-    </transition>
-
-    <transition name="modal-fade">
-        <div v-if="pendingJumpUrl"
-             class="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="pendingJumpUrl = null">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-6">
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-indigo-50 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2" stroke-linecap="round">
-                            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-                            <polyline points="15 3 21 3 21 9"></polyline>
-                            <line x1="10" y1="14" x2="21" y2="3"></line>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-800">即将离开页面</h3>
-                    <p class="text-slate-500 mt-2 text-sm">确认要前往播放 <span class="font-semibold text-indigo-600">"{{ jumpSongTitle }}"</span>
-                        吗？</p>
-                </div>
-                <div class="flex space-x-3">
-                    <button @click="pendingJumpUrl = null"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">
-                        留在本页
-                    </button>
-                    <button @click="confirmJump"
-                            class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition">
-                        立即前往
-                    </button>
-                </div>
-            </div>
-        </div>
-    </transition>
-
-    <transition name="modal-fade">
-        <div v-if="showFavoritesModal"
-             class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="showFavoritesModal = false">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 flex flex-col max-h-[80vh]">
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-xl font-bold text-slate-800">我的收藏 ({{ favorites.length }})</h3>
-                    <button @click="openAddFavoriteModal" class="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                            <line x1="12" y1="5" x2="12" y2="19"></line>
-                            <line x1="5" y1="12" x2="19" y2="12"></line>
-                        </svg>
-                    </button>
-                    <button @click="showFavoritesModal = false" class="text-slate-400 hover:text-slate-600">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-
-                <div class="mb-4 relative">
-                    <input v-model="favSearchQuery"
-                           type="text"
-                           placeholder="搜索收藏的歌曲..."
-                           class="w-full px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-400 transition"
-                    >
-                    <div v-if="favSearchQuery"
-                         @click="favSearchQuery = ''"
-                         class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 cursor-pointer hover:text-slate-600">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </div>
-                </div>
-
-                <div class="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
-                    <div v-for="fav in filteredFavorites" :key="fav.id" class="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center group">
-                        <div class="flex-1 min-w-0" @click="goToLink(fav)"> <div class="font-bold text-slate-700 text-sm truncate">{{ fav.title }}</div>
-                            <div class="text-[10px] text-slate-400 truncate">{{ fav.url }}</div>
-                        </div>
-                        <div class="flex items-center gap-1">
-                            <button @click="startEdit(fav)" class="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition" title="编辑">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                                </svg>
-                            </button>
-
-                            <button @click="addFavoriteToQueue(fav)" class="p-2 text-indigo-500 hover:bg-indigo-50 rounded-xl transition" title="加入队列">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                                    <path d="M12 5v14M5 12h14"></path>
-                                </svg>
-                            </button>
-
-                            <button @click="toggleFavorite(fav)" class="p-2 text-red-500 hover:bg-red-50 rounded-xl transition" title="取消收藏">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                                    <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
-                                </svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div v-if="filteredFavorites.length === 0" class="text-center py-10 text-slate-300 text-sm">
-                        {{ favSearchQuery ? '没有找到匹配的歌曲' : '还没有收藏任何歌曲' }}
-                    </div>
-                </div>
-
-                <div class="mt-6 space-y-3">
-                    <div class="flex gap-3">
-                        <button @click="exportFavorites"
-                                :disabled="favorites.length === 0"
-                                class="flex-1 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-200 transition disabled:opacity-50">
-                            导出 JSON
-                        </button>
-                        <button @click="$refs.fileInput.click()"
-                                class="flex-1 py-2 bg-slate-100 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-200 transition">
-                            导入 JSON
-                        </button>
-                    </div>
-                    <input type="file" ref="fileInput" class="hidden" accept=".json" @change="handleImportFile">
-                </div>
-            </div>
-        </div>
-    </transition>
-
-    <transition name="modal-fade">
-        <div v-if="showSettings"
-             class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="showSettings = false">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl border border-slate-100 p-6 space-y-6">
-                <h3 class="text-xl font-bold text-slate-800">偏好设置</h3>
-
-                <div class="space-y-4">
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-bold text-slate-700">我的昵称</span>
-                            <button @click="tempNickname = nickname; showNicknameModal = true" class="text-xs font-bold text-indigo-600 hover:underline">修改</button>
-                        </div>
-                        <div class="text-sm text-slate-500 font-medium">{{ nickname || '未设置' }}</div>
-                    </div>
-
-                    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div class="flex items-center justify-between mb-2">
-                            <span class="font-bold text-slate-700">跳转方式</span>
-                            <div class="relative flex bg-slate-200 p-1 rounded-xl w-32 h-9 overflow-hidden">
-                                <div class="absolute top-1 left-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-lg shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.4,1.2,0.3,1)]"
-                                     :style="{ transform: jumpMode === 'app' ? 'translateX(100%)' : 'translateX(0)' }"></div>
-
-                                <button @click="jumpMode = 'web'"
-                                        class="relative z-10 flex-1 text-xs font-bold transition-colors duration-200"
-                                        :class="jumpMode === 'web' ? 'text-indigo-600' : 'text-slate-500'">网页
-                                </button>
-                                <button @click="jumpMode = 'app'"
-                                        class="relative z-10 flex-1 text-xs font-bold transition-colors duration-200"
-                                        :class="jumpMode === 'app' ? 'text-indigo-600' : 'text-slate-500'">App
-                                </button>
-                            </div>
-                        </div>
-                        <p class="text-[10px] text-slate-400">网页模式打开 H5 页面，App 尝试唤起客户端</p>
-                    </div>
-
-                    <div class="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                        <div>
-                            <div class="font-bold text-slate-700">直接跳转</div>
-                            <div class="text-[10px] text-slate-400">点击歌曲后不再弹出确认框</div>
-                        </div>
-                        <button @click="autoJump = !autoJump"
-                                :class="['w-12 h-6 rounded-full transition-colors duration-300 relative focus:outline-none flex items-center', autoJump ? 'bg-indigo-600 shadow-inner' : 'bg-slate-300']">
-                            <span :class="['absolute bg-white w-4 h-4 rounded-full shadow transition-all duration-300 ease-[cubic-bezier(0.34,1.2,0.5,1)]', autoJump ? 'left-7 scale-110' : 'left-1 scale-100']"></span>
-                        </button>
-                    </div>
-                </div>
-
-                <button @click="showSettings = false"
-                        class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 active:scale-95 transition shadow-lg shadow-indigo-100">
-                    完成
-                </button>
-            </div>
-        </div>
-    </transition>
-
-    <div class="fixed bottom-0 left-0 right-0 z-40 px-4 pb-2 pt-2 bg-white/80 backdrop-blur-md border-t border-slate-100 flex items-center justify-between max-w-md mx-auto">
-        <button @click="handleRefresh" class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90">
-            <svg :class="{ 'animate-spin-once': isRefreshing }"
-                 width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.25L21 8"></path>
-                <polyline points="21 3 21 8 16 8"></polyline>
-            </svg>
-        </button>
-
-        <button @click="historyList.length > 0 && undoSung(historyList[historyList.length - 1])"
-                :disabled="historyList.length === 0"
-                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20">
-            <svg class="transform scale-x-[-1]" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <polygon points="5 4 15 12 5 20 5 4"></polygon>
-                <line x1="19" y1="5" x2="19" y2="19"></line>
-            </svg>
-        </button>
-
-        <div class="flex flex-col items-center">
-            <button @click="showAddModal = true"
-                    class="w-16 h-16 bg-indigo-600 text-white rounded-full shadow-xl shadow-indigo-200 flex items-center justify-center -translate-y-5 border-4 border-white active:scale-95 transition-transform">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                </svg>
-            </button>
-            <!--            <a href="https://github.com/StarFreedomX/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
-                            GitHub
-                        </a>-->
-        </div>
-
-        <button @click="nextSong"
-                :disabled="queueList.length === 0"
-                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <polygon points="5 4 15 12 5 20 5 4"></polygon>
-                <line x1="19" y1="5" x2="19" y2="19"></line>
-            </svg>
-        </button>
-
-        <button @click="showShuffleConfirm = true" class="p-3 text-slate-400 hover:text-orange-500 transition active:scale-90">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <polyline points="16 3 21 3 21 8"></polyline>
-                <line x1="4" y1="20" x2="21" y2="3"></line>
-                <polyline points="21 16 21 21 16 21"></polyline>
-                <line x1="15" y1="15" x2="21" y2="21"></line>
-                <line x1="4" y1="4" x2="9" y2="9"></line>
-            </svg>
-        </button>
-    </div>
-
-    <transition name="modal-fade">
-        <div v-if="showShuffleConfirm" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" @click.self="showShuffleConfirm = false">
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-6">
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                            <polyline points="16 3 21 3 21 8"></polyline>
-                            <line x1="4" y1="20" x2="21" y2="3"></line>
-                        </svg>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-800">确认打乱列表？</h3>
-                    <p class="text-slate-500 mt-2">所有歌曲的播放顺序将被随机重新排列。</p>
-                </div>
-                <div class="flex space-x-3">
-                    <button @click="showShuffleConfirm = false" class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl">取消</button>
-                    <button @click="shuffleSongs" class="flex-1 py-3 bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-200">立即打乱</button>
-                </div>
-            </div>
-        </div>
-    </transition>
 
     <div class="h-24"></div>
 
