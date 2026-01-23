@@ -11,11 +11,11 @@
  */
 const { ref, onMounted, onUnmounted, computed, watch } = Vue;
 export default {
-    components: {draggable: window.vuedraggable}, setup() {
+    components: { draggable: window.vuedraggable },
+    setup() {
         const pathParts = window.location.pathname.split('/');
         const roomIdFromUrl = pathParts.at(-1) || '';
         const roomId = ref(roomIdFromUrl);
-        console.log(roomId.value)
 
         // 修改页面标题
         if (roomId.value) {
@@ -27,7 +27,7 @@ export default {
         const isDragging = ref(false);
         const deletingSong = ref(null);
         const editingSong = ref(null);
-        const editForm = ref({title: '', url: ''});
+        const editForm = ref({ title: '', url: '' });
         const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
         const showFavoritesModal = ref(false);
         const favSearchQuery = ref('');
@@ -38,7 +38,7 @@ export default {
         const showNicknameModal = ref(false);
         const tempNickname = ref('');
         const fileInput = ref(null);
-        const form = ref({title: '', url: ''})
+        const form = ref({ title: '', url: '' })
         const pendingJumpUrl = ref(null); // 存储待跳转的 URL
         const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
         const showSettings = ref(false);
@@ -56,7 +56,7 @@ export default {
         watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
         watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
         watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
-        watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), {deep: true});
+        watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
         // 逻辑拆分：待唱列表和已唱列表
         const queueList = computed({
             get: () => songs.value.filter(s => !s.state || s.state === 'queued'), set: (newList) => {
@@ -87,7 +87,7 @@ export default {
                     }, 800);
                 }
             }
-        }, {deep: true});
+        }, { deep: true });
 
         const isFavorited = (song) => {
             return favorites.value.some(f => f.url === song.url);
@@ -127,7 +127,7 @@ export default {
 
         const exportFavorites = () => {
             const dataStr = JSON.stringify(favorites.value, null, 2);
-            const blob = new Blob([dataStr], {type: 'application/json'});
+            const blob = new Blob([dataStr], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
@@ -200,13 +200,13 @@ export default {
         const commitOp = async (opData) => {
             let cleanSong = null;
             if (opData.song) {
-                const {id, title, url, state, addedBy} = opData.song;
-                cleanSong = {id, title, url, state, addedBy};
+                const { id, title, url, state, addedBy } = opData.song;
+                cleanSong = { id, title, url, state, addedBy };
             }
 
             try {
                 const res = await fetch(`${commitApiUrl}?roomId=${roomId.value}`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
                         idArrayHash: lastHash.value, // 这个 Hash 现在代表了旧列表的内容+顺序
                         toIndex: opData.toIndex, song: cleanSong
                     })
@@ -270,7 +270,7 @@ export default {
             if (link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i)) {
                 try {
                     const res = await fetch(`api/parseLink`, {
-                        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
                             link
                         })
                     }).then(r => r.json());
@@ -305,7 +305,7 @@ export default {
 
             function cleanTitleNested(title) {
 
-                const brackets = {'】': '【', ']': '[', ')': '(', '）': '（', '』': '『', '」': '「'};
+                const brackets = { '】': '【', ']': '[', ')': '(', '）': '（', '』': '『', '」': '「' };
                 const leftBrackets = Object.values(brackets);
 
                 // 使用数组操作，方便根据索引标记删除
@@ -321,7 +321,7 @@ export default {
                     let char = chars[i];
 
                     if (leftBrackets.includes(char)) {
-                        stack.push({type: char, index: i});
+                        stack.push({ type: char, index: i });
                     } else if (brackets[char]) {
                         // 查找栈中最近的匹配左括号
                         let lastMatchIdx = -1;
@@ -391,7 +391,7 @@ export default {
             };
 
             songs.value.push(newSong);
-            form.value = {title: '', url: ''};
+            form.value = { title: '', url: '' };
 
             setTimeout(() => {
                 const target = songs.value.find(s => s.id === newSong.id);
@@ -612,7 +612,7 @@ export default {
         const onDragChange = async (evt) => {
             isDragging.value = false;
             if (evt.moved) {
-                const {element, newIndex} = evt.moved;
+                const { element, newIndex } = evt.moved;
                 // 因为 queueList 在 songs 的最前面，所以 newIndex 就是最终 index
                 await commitOp({
                     song: element, toIndex: newIndex
@@ -623,7 +623,7 @@ export default {
         // 点击编辑按钮触发
         const startEdit = (song) => {
             editingSong.value = song;
-            editForm.value = {title: song.title, url: song.url};
+            editForm.value = { title: song.title, url: song.url };
         };
 
         const moveToTop = async (song) => {
@@ -692,7 +692,7 @@ export default {
             const index = songs.value.findIndex(s => s.id === song.id);
 
             if (index !== -1) {
-                const oldData = {title: song.title, url: song.url};
+                const oldData = { title: song.title, url: song.url };
 
                 // 乐观更新 UI
                 song.title = editForm.value.title;
@@ -715,7 +715,7 @@ export default {
         async function shuffleSongs() {
             showShuffleConfirm.value = false;
             try {
-                const response = await fetch(`api/shuffle?roomId=${roomId.value}`, {method: 'POST'});
+                const response = await fetch(`api/shuffle?roomId=${roomId.value}`, { method: 'POST' });
                 const result = await response.json();
                 if (result.success) {
                     load(); // 重新加载列表
@@ -727,14 +727,14 @@ export default {
 
         const undoSung = async (song) => {
             await commitOp({
-                song: {...song, state: 'queued'}, toIndex: 0
+                song: { ...song, state: 'queued' }, toIndex: 0
             });
         };
 
         const nextSong = async () => {
             try {
                 const res = await fetch(`api/nextSong?roomId=${roomId.value}`, {
-                    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
                         idArrayHash: lastHash.value
                     })
                 }).then(r => r.json());

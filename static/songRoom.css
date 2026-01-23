@@ -1,0 +1,187 @@
+/* 定义转一圈的动画 */
+@keyframes spinOneTurn {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.animate-spin-once {
+    /* 0.6秒内转完一圈，使用 ease-in-out 让起步和停止更自然 */
+    animation: spinOneTurn 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 置顶 */
+.highlight-top {
+    animation: pulseTop 2s ease;
+}
+
+#app {
+    overflow-x: hidden;
+    position: relative;
+}
+
+@keyframes pulseTop {
+    0% {
+        border-color: #f97316;
+        background-color: #fff7ed;
+    }
+    100% {
+        border-color: #e2e8f0;
+        background-color: white;
+    }
+}
+
+@keyframes pulseHighlight {
+    0% {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+    50% {
+        border-color: #6366f1;
+        box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.3);
+    }
+    100% {
+        border-color: #e2e8f0;
+        box-shadow: none;
+    }
+    /* 恢复到 slate-200 */
+}
+
+/* 主动变动 */
+.highlight-change {
+    animation: pulseHighlight 1s ease;
+}
+
+/* 被动 */
+.highlight-affected {
+    animation: pulseAffected 0.8s ease;
+}
+
+@keyframes pulseHighlight {
+    0% {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+    }
+    50% {
+        border-color: #6366f1;
+        box-shadow: 0 0 12px 4px rgba(99, 102, 241, 0.3);
+    }
+    100% {
+        border-color: #e2e8f0;
+    }
+}
+
+@keyframes pulseAffected {
+    0% {
+        background-color: #f8fafc;
+    }
+    50% {
+        background-color: #f1f5f9;
+        border-color: #cbd5e1;
+    }
+    100% {
+        background-color: white;
+        border-color: #e2e8f0;
+    }
+}
+
+/* 拖拽位置交换的动画 */
+.song-list-move {
+    transition: transform 0.4s cubic-bezier(0.2, 0, 0, 1) !important;
+}
+
+/* 入场动画 */
+.slide-in-item {
+    max-height: 50px;
+    opacity: 0;
+    margin-bottom: 0 !important;
+    overflow: hidden;
+    animation: slideInFromRight 0.4s cubic-bezier(0.2, 0, 0, 1) forwards;
+    transition: max-height 0.4s ease, opacity 0.4s ease, margin 0.4s ease;
+}
+
+.slide-in-active {
+    max-height: 200px !important;
+    opacity: 1 !important;
+    margin-bottom: 0.75rem !important;
+}
+
+@keyframes slideInFromRight {
+    from {
+        opacity: 0;
+        transform: translateX(300px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* 离场动画 */
+.slide-out-item {
+    animation: slideOutToRight 0.4s cubic-bezier(0.2, 0, 0, 1) forwards;
+    transition: all 0.4s cubic-bezier(0.2, 0, 0, 1);
+    overflow: hidden;
+}
+
+/* 当进入删除状态时 */
+.slide-out-item[is-deleting="true"] {
+    max-height: 0 !important;
+    margin-bottom: 0 !important;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    opacity: 0;
+    border-width: 0;
+}
+
+.song-card:hover .flex-1 .font-bold {
+    color: #4f46e5; /* indigo-600 */
+    text-decoration: underline;
+}
+
+@keyframes slideOutToRight {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(300px);
+    }
+}
+
+/* 弹窗进入/离开的过渡 */
+.modal-fade-enter-active,
+.modal-fade-leave-active {
+    transition: all 0.3s ease;
+}
+
+/* 初始/结束状态：遮罩透明度为0，内容缩小并稍微向下偏移 */
+.modal-fade-enter-from,
+.modal-fade-leave-to {
+    opacity: 0;
+}
+
+.modal-fade-enter-from .modal-container,
+.modal-fade-leave-to .modal-container {
+    transform: scale(0.9) translateY(20px);
+    opacity: 0;
+}
+
+/* 容器本身的过渡需要独立于遮罩，这样才有层次感 */
+.modal-container {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.ghost-card {
+    opacity: 0.2;
+    background: #6366f1 !important;
+}
+
+.drag-handle {
+    cursor: grab;
+}
+
+[v-cloak] {
+    display: none !important;
+}
