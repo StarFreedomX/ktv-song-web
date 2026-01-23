@@ -15,6 +15,7 @@ export default {
         const pathParts = window.location.pathname.split('/');
         const roomIdFromUrl = pathParts.at(-1) || '';
         const roomId = ref(roomIdFromUrl);
+        console.log(roomId.value)
 
         // 修改页面标题
         if (roomId.value) {
@@ -204,7 +205,7 @@ export default {
             }
 
             try {
-                const res = await fetch(`${commitApiUrl}?roomId=${roomId}`, {
+                const res = await fetch(`${commitApiUrl}?roomId=${roomId.value}`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                         idArrayHash: lastHash.value, // 这个 Hash 现在代表了旧列表的内容+顺序
                         toIndex: opData.toIndex, song: cleanSong
@@ -463,7 +464,7 @@ export default {
         const load = async () => {
             if (isDragging.value) return;
             try {
-                const url = `${loadSongListUrl}?roomId=${roomId}&lastHash=${(await getHash(songs.value))}`;
+                const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${(await getHash(songs.value))}`;
                 const res = await fetch(url).then(r => r.json());
 
                 if (res.changed) {
@@ -714,7 +715,7 @@ export default {
         async function shuffleSongs() {
             showShuffleConfirm.value = false;
             try {
-                const response = await fetch(`api/shuffle?roomId=${roomId}`, {method: 'POST'});
+                const response = await fetch(`api/shuffle?roomId=${roomId.value}`, {method: 'POST'});
                 const result = await response.json();
                 if (result.success) {
                     load(); // 重新加载列表
@@ -732,7 +733,7 @@ export default {
 
         const nextSong = async () => {
             try {
-                const res = await fetch(`api/nextSong?roomId=${roomId}`, {
+                const res = await fetch(`api/nextSong?roomId=${roomId.value}`, {
                     method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({
                         idArrayHash: lastHash.value
                     })
