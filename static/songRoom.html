@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><%= pageTitle %></title>
+    <title>KTV 房间</title>
     <link rel="icon" href="favicon.ico" type="image/x-icon">
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
@@ -203,7 +203,7 @@
     <header class="mb-6 flex justify-between items-start">
         <div @click="backHome()" class="cursor-pointer group">
             <h1 class="text-3xl font-black text-indigo-600">KTV<br/>Queue</h1>
-            <p class="text-slate-400">房间ID: <%= roomId %></p>
+            <p class="text-slate-400">房间ID: {{ roomId }}</p>
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
@@ -219,16 +219,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
                     </svg>
-                    <!-- 收藏 -->
                 </button>
-<!--                <button @click="nextSong"
-                        class="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 active:scale-95 transition flex items-center gap-1">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-                        <polygon points="5 4 15 12 5 20 5 4"></polygon>
-                        <line x1="19" y1="5" x2="19" y2="19"></line>
-                    </svg>
-                    下一首
-                </button>-->
                 <button @click="showSettings = true"
                         class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 hover:text-indigo-600 transition">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -836,7 +827,14 @@
     createApp({
         components: {draggable: window.vuedraggable},
         setup() {
-            const roomId = "<%= roomId %>"
+            const pathParts = window.location.pathname.split('/');
+            const roomIdFromUrl = pathParts.at(-1) || '';
+            const roomId = ref(roomIdFromUrl);
+
+            // 修改页面标题
+            if (roomId.value) {
+                document.title = `KTV 房间 - ${roomId.value}`;
+            }
             const EMPTY_HASH = "EMPTY_LIST_HASH"; // 与后端 getHash 函数中的占位符一致
             const lastHash = ref(EMPTY_HASH);
             const activeTab = ref(localStorage.getItem('ktv_active_tab') || 'queue');
@@ -1612,7 +1610,7 @@
             onUnmounted(() => clearInterval(timer))
 
             return {
-                songs, queueList, historyList, nextSong,
+                roomId, songs, queueList, historyList, nextSong,
                 form, add, remove, load, onDragChange, reAdd,
                 lastHash, activeTab, isDragging, goToLink, startEdit,
                 saveEdit, editingSong, editForm, moveToTop, undoSung,
