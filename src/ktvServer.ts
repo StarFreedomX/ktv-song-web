@@ -16,8 +16,7 @@ const DATABASE_NAME = "ktv_room" as const;
 
 export function runKTVServer(staticDir: string, redisUrl?: string) {
     const app = new Koa();
-    const publicPath = path.resolve(staticDir, 'public');
-    app.use(serve(publicPath));
+    app.use(serve(staticDir));
     const router = new Router();
     app.use(bodyParser());
 
@@ -302,7 +301,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             // const templatePath = path.resolve(__dirname, '../static/songRoom.ejs')
             templateStr = fs.readFileSync(templatePath, 'utf-8')
         }
-        const { roomId } = koaCtx.params
+        // const { roomId } = koaCtx.params
         const urlPath = koaCtx.path;
         // 检查路径末尾是否有斜杠
         if (urlPath.endsWith('/')) {
