@@ -4,12 +4,12 @@ const path = require('path');
 const app = express();
 
 app.use('/api', createProxyMiddleware({
-    target: 'http://localhost:5823',
+    target: 'http://localhost:5823/api',
     changeOrigin: true
 }));
 
 app.use('/static', createProxyMiddleware({
-    target: 'http://localhost:5823',
+    target: 'http://localhost:5823/static',
     changeOrigin: true
 }));
 

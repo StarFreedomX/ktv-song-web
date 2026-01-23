@@ -1,11 +1,11 @@
 import path from "node:path";
 import fs from "node:fs";
 import process from "node:process";
-import ejs from 'ejs';
+// import ejs from 'ejs';
 import ktvLogger from "@/logger";
 import Koa from "koa";
-import serve from "koa-static";
-import mount from "koa-mount"
+// import serve from "koa-static";
+// import mount from "koa-mount"
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import { Storage } from "@/storage";
@@ -15,9 +15,9 @@ import { OpLog, Song, SongOperationBody } from "@/types";
 
 const DATABASE_NAME = "ktv_room" as const;
 
-export function runKTVServer(staticDir: string, redisUrl?: string) {
+export function runKTVServer(_staticDir: string, redisUrl?: string) {
     const app = new Koa();
-    app.use(mount('/static', serve(staticDir)));
+    // app.use(mount('/static', serve(staticDir)));
     const router = new Router();
     app.use(bodyParser());
 
@@ -26,11 +26,11 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
 
     // HTML
     // const templatePath = path.resolve(staticDir,'./songRoom.ejs')
-    const templatePath = path.resolve(staticDir,'./songRoom.html')
-    const homePagePath = path.resolve(staticDir,'./home.html')
-    let templateStr = fs.readFileSync(templatePath, 'utf-8')
-    let homePageStr = fs.readFileSync(homePagePath, 'utf-8')
-    ktvLogger.info('loaded songRoom.ejs')
+    // const templatePath = path.resolve(staticDir,'./songRoom.html')
+    // const homePagePath = path.resolve(staticDir,'./home.html')
+    // let templateStr = fs.readFileSync(templatePath, 'utf-8')
+    // let homePageStr = fs.readFileSync(homePagePath, 'utf-8')
+    // ktvLogger.info('loaded songRoom.ejs')
     const storage = new Storage(redisUrl);
 
     // 校验 roomId
@@ -295,7 +295,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         }
     });
 
-    // WebUI 托管
+/*    // WebUI 托管
     router.get('/:roomId', async (koaCtx) => {
         if (process.env.NODE_ENV === "development") {
             ktvLogger.info('loading template')
@@ -311,11 +311,11 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
             koaCtx.redirect(urlPath.slice(0,-1) + koaCtx.search);
             return;
         }
-        /*// 使用 EJS
+        /!*!// 使用 EJS
         const html = ejs.render(templateStr, {
             roomId,
             pageTitle: `KTV 房间 - ${roomId}`
-        })*/
+        })*!/
         koaCtx.type = 'html'
         koaCtx.body = templateStr
     })
@@ -337,7 +337,7 @@ export function runKTVServer(staticDir: string, redisUrl?: string) {
         }
         koaCtx.type = 'html';
         koaCtx.body = homePageStr;
-    });
+    });*/
 
     app.use(router.routes()).use(router.allowedMethods());
 

@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { initUtils } from "./utils";
+import { useRoute } from 'vue-router';
 import ShuffleConfirmModal from "./components/ShuffleConfirmModal.vue";
 import SettingsModal from "./components/SettingsModal.vue";
 import FavoritesModal from "./components/FavoritesModal.vue";
@@ -13,8 +14,8 @@ import BottomNav from "./components/BottomNav.vue";
 import QueueList from "./components/QueueList.vue";
 import HistoryList from "./components/HistoryList.vue";
 
-const pathParts = window.location.pathname.split('/');
-const roomIdFromUrl = pathParts.at(-1) || '';
+const route = useRoute();
+const roomIdFromUrl = route.params.roomId;
 const roomId = ref(roomIdFromUrl);
 
 // 修改页面标题
