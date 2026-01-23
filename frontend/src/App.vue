@@ -1,6 +1,5 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import draggable from 'vuedraggable';
 import { initUtils } from "./utils";
 import ShuffleConfirmModal from "./components/ShuffleConfirmModal.vue";
 import SettingsModal from "./components/SettingsModal.vue";

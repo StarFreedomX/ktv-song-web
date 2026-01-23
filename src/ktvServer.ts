@@ -5,6 +5,7 @@ import ejs from 'ejs';
 import ktvLogger from "@/logger";
 import Koa from "koa";
 import serve from "koa-static";
+import mount from "koa-mount"
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import { Storage } from "@/storage";
@@ -16,7 +17,7 @@ const DATABASE_NAME = "ktv_room" as const;
 
 export function runKTVServer(staticDir: string, redisUrl?: string) {
     const app = new Koa();
-    app.use(serve(staticDir));
+    app.use(mount('/static', serve(staticDir)));
     const router = new Router();
     app.use(bodyParser());
 
