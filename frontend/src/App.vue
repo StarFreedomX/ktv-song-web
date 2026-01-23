@@ -1,22 +1,568 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KTV 房间</title>
-    <link rel="icon" href="favicon.ico" type="image/x-icon">
-    <link rel="stylesheet" href="./songRoom.css">
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/vuedraggable@4.1.0/dist/vuedraggable.umd.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 一个纯js版的 SHA-256 实现，用于HTTP下前端生成列表哈希 -->
-    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.11.0/src/sha256.min.js"></script>
+<script setup>
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import draggable from 'vuedraggable';
+import { initUtils } from "./utils";
+
+const pathParts = window.location.pathname.split('/');
+const roomIdFromUrl = pathParts.at(-1) || '';
+const roomId = ref(roomIdFromUrl);
+
+// 修改页面标题
+if (roomId.value) {
+    document.title = `KTV 房间 - ${roomId.value}`;
+}
+
+// 字符串常量
+const EMPTY_HASH = "EMPTY_LIST_HASH"; // 与后端 getHash 函数中的占位符一致
+const commitApiUrl = "api/songOperation"
+const loadSongListUrl = "api/songListInfo"
+
+// 基础设定
+const lastHash = ref(EMPTY_HASH);
+const nickname = ref(localStorage.getItem('ktv_nickname') || '');
+const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
+const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
+const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
+
+// 控制页面元素的变量
+const activeTab = ref(localStorage.getItem('ktv_active_tab') || 'queue');
+const isDragging = ref(false);
+const deletingSong = ref(null);
+const editingSong = ref(null);
+const isAddingToFavorites = ref(false);
+const showFavoritesModal = ref(false);
+const showNicknameModal = ref(false);
+const showShuffleConfirm = ref(false);
+const showSettings = ref(false);
+const showAddModal = ref(false);
+
+// 存储
+/** @type {import('vue').Ref<Song[]>} */
+const songs = ref([]);
+const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
+
+// 临时变量
+const editForm = ref({ title: '', url: '' });
+const favSearchQuery = ref('');
+const tempNickname = ref('');
+const fileInput = ref(null);
+const form = ref({ title: '', url: '' })
+const pendingJumpUrl = ref(null); // 存储待跳转的 URL
+const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
+const autoInput = ref('');
+const isRefreshing = ref(false);
 
 
-</head>
-<body class="bg-slate-50 min-h-screen p-4 sm:p-8 text-slate-900">
-<div id="app" class="max-w-md mx-auto" v-cloak>
+// 工具函数
+const {
+    getHash,
+    parseBilibiliShortLink,
+    handleAutoRecognize,
+    executeJump,
+    backHome,
+    getLISIndices
+} = initUtils(lastHash);
+
+
+//监听器
+// 逻辑拆分：待唱列表和已唱列表
+const queueList = computed({
+    get: () => songs.value.filter(s => !s.state || s.state === 'queued'), set: (newList) => {
+        const history = songs.value.filter(s => s.state === 'sung');
+        songs.value = [...newList, ...history];
+    }
+});
+const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+const filteredFavorites = computed(() => {
+    if (!favSearchQuery.value.trim()) {
+        return favorites.value; //
+    }
+    const query = favSearchQuery.value.toLowerCase();
+    return favorites.value.filter(fav => fav.title.toLowerCase().includes(query) || fav.url.toLowerCase().includes(query)); //
+});
+watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
+watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
+watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
+watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
+watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
+
+// 监听正在播放歌曲的变化
+watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
+    // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
+    if (hostMode.value && newSong && (!oldSong || newSong.id !== oldSong.id)) {
+        console.log('主机模式：检测到切歌，正在自动跳转...', newSong.title);
+
+        if (newSong.url) {
+            // 主机模式下直接跳转，不弹窗确认
+            // 为了保证稳定性，延迟 800ms 等待数据同步完成
+            setTimeout(() => {
+                window.location.href = newSong.url;
+            }, 800);
+        }
+    }
+}, { deep: true });
+
+
+// 收藏相关
+const isFavorited = (song) => {
+    return favorites.value.some(f => f.url === song.url);
+};
+
+const toggleFavorite = (song) => {
+    const index = favorites.value.findIndex(f => f.url === song.url);
+    if (index > -1) {
+        favorites.value.splice(index, 1);
+    } else {
+        favorites.value.push({
+            id: 'fav-' + Math.random().toString(36).slice(2, 11), title: song.title, url: song.url
+        });
+    }
+};
+
+const addFavoriteToQueue = async (fav) => {
+    await reAdd({
+        title: fav.title,
+        url: fav.url
+    });
+};
+
+const openAddFavoriteModal = () => {
+    isAddingToFavorites.value = true;
+    showAddModal.value = true; // 复用原有的添加歌曲弹窗
+};
+
+const exportFavorites = () => {
+    const dataStr = JSON.stringify(favorites.value, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `ktv_favorites_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+};
+
+const handleImportFile = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        try {
+            const imported = JSON.parse(e.target.result);
+            if (Array.isArray(imported)) {
+                const currentUrls = new Set(favorites.value.map(f => f.url));
+                const newItems = imported.filter(item => item.title && item.url && !currentUrls.has(item.url)).map(item => ({
+                    id: 'fav-' + Math.random().toString(36).slice(2, 11), title: item.title, url: item.url
+                }));
+
+                if (newItems.length > 0) {
+                    favorites.value = [...favorites.value, ...newItems];
+                    alert(`成功导入 ${newItems.length} 首歌曲`);
+                } else {
+                    alert('没有发现新的歌曲或文件格式不正确');
+                }
+            } else {
+                alert('无效的 JSON 格式：应为数组');
+            }
+        } catch (err) {
+            console.error(err);
+            alert('解析 JSON 失败');
+        }
+        event.target.value = '';
+    };
+    reader.readAsText(file);
+};
+
+
+//歌曲操作相关
+const commitOp = async (opData) => {
+    let cleanSong = null;
+    if (opData.song) {
+        const { id, title, url, state, addedBy } = opData.song;
+        cleanSong = { id, title, url, state, addedBy };
+    }
+
+    try {
+        const res = await fetch(`${commitApiUrl}?roomId=${roomId.value}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                idArrayHash: lastHash.value, // 这个 Hash 现在代表了旧列表的内容+顺序
+                toIndex: opData.toIndex, song: cleanSong
+            })
+        }).then(r => r.json());
+
+        if (res.success) {
+            if (await getHash(songs.value) !== res.hash) {
+                // console.log(songs.value, await getHash(songs.value))
+                await load();
+            } else lastHash.value = res.hash;
+            if (res.song && opData.song) {
+                const localSong = songs.value.find(s => s.id === opData.song.id);
+                if (localSong) {
+                    localSong.url = res.song.url; //bilibili://...
+                    localSong.id = res.song.id;   // BV...
+                }
+            }
+            return true;
+        } else if (res.code === 'REJECT') {
+            // 如果被拒绝，说明前端 Hash 过时
+            lastHash.value = EMPTY_HASH; // 重置
+            await load();
+        }
+    } catch (e) {
+        console.error("API Error:", e);
+    }
+    return false;
+}
+
+const handleAdd = async () => {
+    if (!form.value.title || !form.value.url) return;
+    if (isAddingToFavorites.value) {
+        // 如果是添加收藏逻辑
+        const newFav = {
+            id: Date.now(),
+            title: form.value.title || '未命名歌曲',
+            url: await parseBilibiliShortLink(form.value.url)
+        };
+        // 检查是否已存在
+        if (!favorites.value.some(f => f.url === newFav.url)) {
+            favorites.value.push(newFav);
+        }
+        showAddModal.value = false;
+        isAddingToFavorites.value = false; // 重置状态
+        // 重置表单
+        form.value.title = '';
+        form.value.url = '';
+    } else {
+        // 原有的添加待唱列表逻辑
+        await add();
+    }
+    showAddModal.value = false;
+    autoInput.value = ''; // 清空识别框
+};
+
+const reAdd = async (song) => {
+    form.value.title = song.title;
+    form.value.url = song.url;
+    await handleAdd();
+};
+
+const add = async () => {
+    let rawUrl = form.value.url.trim();
+    if (!form.value.title || !rawUrl) return;
+
+    // 计算有效长度（排除正在删除的）
+    const effectiveLen = songs.value.filter(s => !s.isDeleting && s.state !== "sung").length;
+
+    const newSong = {
+        id: 's-' + Math.random().toString(36).slice(2, 11),
+        title: form.value.title,
+        url: rawUrl,
+        addedBy: nickname.value,
+        isNew: true
+    };
+
+    // songs.value.push(newSong);
+    songs.value.splice(effectiveLen, 0, newSong);
+    form.value = { title: '', url: '' };
+
+    setTimeout(() => {
+        const target = songs.value.find(s => s.id === newSong.id);
+        if (target) target.isNew = false;
+    }, 600);
+
+    const success = await commitOp({
+        song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
+    });
+    if (!success) await load();
+}
+
+// 点击垃圾桶图标，仅记录要删除的对象并显示弹窗
+const remove = (songObj) => {
+    deletingSong.value = songObj;
+};
+
+// 用户在弹窗点击“确认移除”
+const confirmDelete = async () => {
+    const songObj = deletingSong.value;
+    if (!songObj) return;
+
+    deletingSong.value = null;
+    songObj.isDeleting = true;
+
+    setTimeout(async () => {
+        songs.value = songs.value.filter(s => s.id !== songObj.id);
+        await commitOp({
+            song: songObj, toIndex: -1
+        });
+    }, 400); // 调整为 400ms 以匹配 CSS 坍塌速度
+};
+
+const moveToTop = async (song) => {
+    // 如果已经在第一位，无需操作
+    if (queueList.value[0]?.id === song.id) return;
+
+    // 这里的逻辑与 load 中的“主动移动”一致
+    const oldIndex = songs.value.findIndex(s => s.id === song.id);
+    if (oldIndex === -1) return;
+
+    song.isDeleting = true;
+
+    setTimeout(async () => {
+        // 从原位置移除
+        const [movedItem] = songs.value.splice(oldIndex, 1);
+        // 插入到最前面 (待唱列表最前面)
+        songs.value.unshift(movedItem);
+
+        // 重置状态并触发高亮
+        movedItem.isDeleting = false;
+        movedItem.isNew = true;
+
+        // 发送给后端，toIndex: 目标顺位
+        const success = await commitOp({
+            song: movedItem, toIndex: 0
+        });
+
+        setTimeout(() => {
+            movedItem.isNewActive = true;
+        }, 10);
+
+        if (!success) {
+            await load();
+        } else {
+            setTimeout(() => {
+                movedItem.isNew = false;
+                movedItem.isNewActive = false;
+                movedItem.isTop = true;
+                setTimeout(() => {
+                    movedItem.isTop = false;
+                }, 1200);
+            }, 600);
+        }
+    }, 350);
+};
+
+const undoSung = async (song) => {
+    await commitOp({
+        song: { ...song, state: 'queued' }, toIndex: 0
+    });
+};
+
+const nextSong = async () => {
+    try {
+        const res = await fetch(`api/nextSong?roomId=${roomId.value}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                idArrayHash: lastHash.value
+            })
+        }).then(r => r.json());
+
+        if (res.code === 'REJECT') {
+            lastHash.value = EMPTY_HASH;
+        }
+        await load();
+    } catch (e) {
+        console.error("Next Song Error:", e);
+    }
+};
+
+async function shuffleSongs() {
+    showShuffleConfirm.value = false;
+    try {
+        const response = await fetch(`api/shuffle?roomId=${roomId.value}`, { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+            load(); // 重新加载列表
+        }
+    } catch (e) {
+        console.error("Shuffle failed:", e);
+    }
+}
+
+
+const load = async () => {
+    if (isDragging.value) return;
+    try {
+        const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${(await getHash(songs.value))}`;
+        const res = await fetch(url).then(r => r.json());
+
+        if (res.changed) {
+            const oldSongs = [...songs.value];
+            const newSongsData = res.list || []; // 处理空返回
+
+            // 如果新数据就是空的，直接赋值并更新 Hash，跳过后续复杂的 LIS 计算
+            if (newSongsData.length === 0) {
+                songs.value = [];
+                lastHash.value = res.hash || EMPTY_HASH;
+                return;
+            }
+
+            // 计算 ID 映射
+            const oldIdMap = new Map();
+            oldSongs.forEach((s, i) => {
+                if (!s.isDeleting) oldIdMap.set(s.id, i);
+            });
+
+            // 识别“主动移动”的 ID
+            const source = newSongsData.map(s => oldIdMap.has(s.id) ? oldIdMap.get(s.id) : -1);
+            const lisIndices = new Set(getLISIndices(source));
+
+            const activeMoveIds = new Set();
+            newSongsData.forEach((s, newIdx) => {
+                const oldIdx = oldIdMap.get(s.id);
+                // 只有既不在 LIS 里、又不是真正的新歌，才是要处理的“改动元素”
+                if (oldIdx !== undefined && oldIdx !== newIdx && !lisIndices.has(newIdx)) {
+                    activeMoveIds.add(s.id);
+                }
+            });
+
+            // 让删除项和“改动项”一起执行退出动画
+            const newIdSet = new Set(newSongsData.map(s => s.id));
+            oldSongs.forEach(s => {
+                // 如果是服务器删了，或者它是主动移动项，执行退出
+                if (!newIdSet.has(s.id) || activeMoveIds.has(s.id)) {
+                    s.isDeleting = true;
+                }
+            });
+
+            // 等待退出动画完成
+            setTimeout(() => {
+                // 构建最终列表
+                songs.value = newSongsData.map((s, newIdx) => {
+                    const oldIdx = oldIdMap.get(s.id);
+                    const isNew = oldIdx === undefined;
+                    const isActiveMove = activeMoveIds.has(s.id);
+
+                    // 被动移动的判定（在 LIS 里但位置变了）
+                    const isAffected = !isNew && !isActiveMove && oldIdx !== newIdx;
+
+                    return {
+                        ...s, // 入场动画
+                        isMoved: isActiveMove, isNew: (isNew || isActiveMove), //&& oldSongs.length > 0,
+                        isAffected: isAffected
+                    };
+                });
+
+                setTimeout(() => {
+                    songs.value.forEach(s => {
+                        if (s.isNew) {
+                            s.isNewActive = true;
+                        }
+                    });
+                }, 10);
+
+                lastHash.value = res.hash;
+
+                // 清理状态
+                setTimeout(() => {
+                    songs.value.forEach(s => {
+                        s.isNew = s.isAffected = s.isNewActive = false;
+                    });
+                }, 600);
+            }, 350);
+        }
+    } catch (e) {
+        console.error("Load Error:", e);
+    }
+};
+
+const goToLink = (song) => {
+    if (song && song.url) {
+        pendingJumpUrl.value = /^https?:\/\//i.test(song.url) ? song.url : `https://${song.url}`;
+        jumpSongTitle.value = song.title;
+
+        if (autoJump.value) {
+            confirmJump(); // 直接执行跳转
+        }
+    }
+};
+
+const confirmJump = () => {
+    if (pendingJumpUrl.value) {
+        const url = pendingJumpUrl.value;
+        executeJump(url, jumpMode);
+        pendingJumpUrl.value = null;
+    }
+};
+
+const onDragChange = async (evt) => {
+    isDragging.value = false;
+    if (evt.moved) {
+        const { element, newIndex } = evt.moved;
+        // 因为 queueList 在 songs 的最前面，所以 newIndex 就是最终 index
+        await commitOp({
+            song: element, toIndex: newIndex
+        });
+    }
+}
+
+// 点击编辑按钮触发
+const startEdit = (song) => {
+    editingSong.value = song;
+    editForm.value = { title: song.title, url: song.url };
+};
+
+const handleRefresh = async () => {
+    if (isRefreshing.value) return; // 防止连续点击
+
+    isRefreshing.value = true;
+
+    // 执行原有的 load 逻辑
+    await load();
+
+    // 动画结束后重置状态
+    setTimeout(() => {
+        isRefreshing.value = false;
+    }, 600);
+};
+
+// 保存逻辑
+const saveEdit = async () => {
+    if (!editForm.value.title || !editForm.value.url) return;
+
+    const song = editingSong.value;
+    const index = songs.value.findIndex(s => s.id === song.id);
+    const oldData = { title: song.title, url: song.url };
+    // 乐观更新 UI
+    song.title = editForm.value.title;
+    song.url = editForm.value.url;
+    if (index !== -1) {
+        const success = await commitOp({
+            song: song, toIndex: index // 原位覆盖更新
+        });
+        if (!success) {
+            // 失败回退
+            song.title = oldData.title;
+            song.url = oldData.url;
+        }
+    }
+    editingSong.value = null;
+};
+
+const saveNickname = () => {
+    if (tempNickname.value.trim()) {
+        nickname.value = tempNickname.value.trim();
+        localStorage.setItem('ktv_nickname', nickname.value);
+        showNicknameModal.value = false;
+    }
+};
+
+let timer
+onMounted(() => {
+    if (!nickname.value) {
+        showNicknameModal.value = true;
+    }
+    load()
+    // 每 3 秒同步一次数据
+    timer = setInterval(load, 5000)
+})
+onUnmounted(() => clearInterval(timer))
+
+</script>
+
+<template>
+
     <header class="mb-6 flex justify-between items-start">
         <div @click="backHome()" class="cursor-pointer group">
             <h1 class="text-3xl font-black text-indigo-600">KTV<br/>Queue</h1>
@@ -26,13 +572,13 @@
             <div class="flex gap-2">
                 <button @click="hostMode = !hostMode"
                         :class="['px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5',
-                         hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
+                     hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
                     <span :class="['w-1.5 h-1.5 rounded-full', hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
                     主机模式 {{ hostMode ? 'ON' : 'OFF' }}
                 </button>
                 <button @click="showFavoritesModal = true"
                         class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-indigo-600 transition flex items-center gap-1"
-                        >
+                >
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
                     </svg>
@@ -53,13 +599,13 @@
     </header>
     <div v-if="historyList.length > 0" class="mb-6">
         <div class="flex items-center justify-between mb-2 px-1">
-        <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-            <span class="relative flex h-2 w-2">
-                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-            </span>
-            正在播放
+    <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+        <span class="relative flex h-2 w-2">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
         </span>
+        正在播放
+    </span>
         </div>
         <div @click="goToLink(historyList[historyList.length - 1])"
              class="song-card bg-indigo-50 border border-indigo-100 p-4 rounded-3xl flex items-center group cursor-pointer transition-all active:scale-95">
@@ -68,9 +614,9 @@
                     {{ historyList[historyList.length - 1].title }}
                 </div>
                 <div class="flex items-center gap-1.5 mt-1.5">
-                <span v-if="historyList[historyList.length - 1].addedBy" class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
-                    {{ historyList[historyList.length - 1].addedBy }}
-                </span>
+            <span v-if="historyList[historyList.length - 1].addedBy" class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
+                {{ historyList[historyList.length - 1].addedBy }}
+            </span>
                     <div class="text-[10px] text-slate-400 truncate opacity-70">{{ historyList[historyList.length - 1].url }}</div>
                 </div>
             </div>
@@ -84,12 +630,12 @@
         </div>
         <button @click="activeTab = 'queue'"
                 :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
-                         activeTab === 'queue' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
+                     activeTab === 'queue' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
             待唱 ({{ queueList.length }})
         </button>
         <button @click="activeTab = 'history'"
                 :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
-                         activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
+                     activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
             已唱 ({{ historyList.length === 0 ? 0 : historyList.length - 1 }})
         </button>
     </div>
@@ -97,26 +643,26 @@
     <!-- 待唱列表 -->
     <div v-show="activeTab === 'queue'">
         <draggable
-                v-model="queueList"
-                item-key="id"
-                handle=".drag-handle"
-                ghost-class="ghost-card"
-                :animation="300"
-                @start="isDragging = true"
-                @end="isDragging = false"
-                @change="onDragChange"
+            v-model="queueList"
+            item-key="id"
+            handle=".drag-handle"
+            ghost-class="ghost-card"
+            :animation="300"
+            @start="isDragging = true"
+            @end="isDragging = false"
+            @change="onDragChange"
         >
             <template #item="{ element }">
                 <div :key="element.id"
                      @click="goToLink(element)"
                      :is-deleting="element.isDeleting ? 'true' : 'false'"
                      :class="['song-card bg-white mb-3 p-4 rounded-2xl shadow-sm border border-slate-200 flex items-center group',
-                     element.isNew ? 'slide-in-item' : '',
-                     element.isNewActive ? 'slide-in-active' : '',
-                     element.isDeleting ? 'slide-out-item' : '',
-                     element.isMoved ? 'highlight-change' : '',
-                     element.isTop ? 'highlight-top' : '',
-                     element.isAffected ? 'highlight-affected' : '']">
+                 element.isNew ? 'slide-in-item' : '',
+                 element.isNewActive ? 'slide-in-active' : '',
+                 element.isDeleting ? 'slide-out-item' : '',
+                 element.isMoved ? 'highlight-change' : '',
+                 element.isTop ? 'highlight-top' : '',
+                 element.isAffected ? 'highlight-affected' : '']">
 
                     <div class="drag-handle p-2 mr-2 text-slate-300 hover:text-indigo-500 transition" @click.stop>
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -132,9 +678,9 @@
                             {{ element.title }}
                         </div>
                         <div class="flex items-center gap-1.5 mt-0.5">
-                        <span v-if="element.addedBy" class="shrink-0 text-[9px] px-1 bg-slate-100 text-slate-400 rounded font-medium">
-                            {{ element.addedBy }}
-                        </span>
+                    <span v-if="element.addedBy" class="shrink-0 text-[9px] px-1 bg-slate-100 text-slate-400 rounded font-medium">
+                        {{ element.addedBy }}
+                    </span>
                             <div class="text-[11px] text-slate-400 truncate opacity-70">{{ element.url }}</div>
                         </div>
                     </div>
@@ -148,18 +694,18 @@
                         </svg>
                     </button>
 
-                        <button @click.stop="moveToTop(element)" class="p-1.5 text-slate-300 hover:text-orange-500 transition">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M12 19V5M5 12l7-7 7 7"/>
-                            </svg>
-                        </button>
+                    <button @click.stop="moveToTop(element)" class="p-1.5 text-slate-300 hover:text-orange-500 transition">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                    </button>
 
-                        <button @click.stop="startEdit(element)" class="p-1.5 text-slate-300 hover:text-indigo-500 transition">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                            </svg>
-                        </button>
+                    <button @click.stop="startEdit(element)" class="p-1.5 text-slate-300 hover:text-indigo-500 transition">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                    </button>
 
                     <button @click.stop="remove(element)" class="p-2 text-slate-300 hover:text-red-500 transition">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -185,9 +731,9 @@
                     {{ element.title }}
                 </div>
                 <div class="flex items-center gap-2 mt-0.5">
-                    <span v-if="element.addedBy" class="shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-medium">
-                        {{ element.addedBy }}
-                    </span>
+                <span v-if="element.addedBy" class="shrink-0 text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md font-medium">
+                    {{ element.addedBy }}
+                </span>
                     <div class="text-[10px] text-slate-300 truncate">{{ element.url }}</div>
                 </div>
             </div>
@@ -255,54 +801,54 @@
     <transition name="modal-fade">
         <div v-if="showAddModal"
              class="fixed inset-0 z-[70] flex items-center justify-center p-4
-           bg-slate-900/40 backdrop-blur-sm"
+       bg-slate-900/40 backdrop-blur-sm"
              @click.self="showAddModal = false; isAddingToFavorites = false;"> <div class="modal-container
-             bg-white w-full max-w-sm
-             rounded-[2.5rem] shadow-2xl
-             p-6 space-y-4">
-                <h3 class="text-xl font-black text-slate-800 px-2">
-                    {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
-                </h3>
+         bg-white w-full max-w-sm
+         rounded-[2.5rem] shadow-2xl
+         p-6 space-y-4">
+            <h3 class="text-xl font-black text-slate-800 px-2">
+                {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
+            </h3>
 
-                <div class="space-y-1">
-                    <label class="text-[10px] font-bold text-indigo-400 ml-1 uppercase tracking-widest">
-                        智能提取 (粘贴B站分享文案)
-                    </label>
-                    <textarea v-model="autoInput" @input="handleAutoRecognize"
-                              class="w-full px-4 py-3 bg-indigo-50/50 rounded-2xl outline-none
-                 border-2 border-transparent focus:border-indigo-200
-                 transition text-sm h-24 resize-none"
-                              placeholder="在这里粘贴..."></textarea>
-                </div>
-
-                <div class="relative flex items-center justify-center py-2">
-                    <div class="w-full border-t border-slate-100"></div>
-                    <span class="absolute bg-white px-3 text-[10px] font-bold text-slate-300">
-            手动输入
-        </span>
-                </div>
-
-                <div class="space-y-3">
-                    <input v-model="form.title"
-                            class="w-full px-4 py-3 bg-slate-50 rounded-xl
-                 outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="歌曲标题">
-                    <input v-model="form.url"
-                            class="w-full px-4 py-3 bg-slate-50 rounded-xl
-                 outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="跳转链接">
-                </div>
-
-                <div class="flex gap-3 pt-2">
-                    <button @click="showAddModal = false; isAddingToFavorites = false;"
-                            class="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl transition">
-                        取消
-                    </button>
-                    <button @click="handleAdd"
-                            class="flex-1 py-3 bg-indigo-600 text-white
-                 font-bold rounded-xl shadow-lg shadow-indigo-200 transition">
-                        {{ isAddingToFavorites ? '确认收藏' : '确认添加' }}
-                    </button>
-                </div>
+            <div class="space-y-1">
+                <label class="text-[10px] font-bold text-indigo-400 ml-1 uppercase tracking-widest">
+                    智能提取 (粘贴B站分享文案)
+                </label>
+                <textarea v-model="autoInput" @input="handleAutoRecognize"
+                          class="w-full px-4 py-3 bg-indigo-50/50 rounded-2xl outline-none
+             border-2 border-transparent focus:border-indigo-200
+             transition text-sm h-24 resize-none"
+                          placeholder="在这里粘贴..."></textarea>
             </div>
+
+            <div class="relative flex items-center justify-center py-2">
+                <div class="w-full border-t border-slate-100"></div>
+                <span class="absolute bg-white px-3 text-[10px] font-bold text-slate-300">
+        手动输入
+    </span>
+            </div>
+
+            <div class="space-y-3">
+                <input v-model="form.title"
+                       class="w-full px-4 py-3 bg-slate-50 rounded-xl
+             outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="歌曲标题">
+                <input v-model="form.url"
+                       class="w-full px-4 py-3 bg-slate-50 rounded-xl
+             outline-none focus:ring-2 focus:ring-indigo-400 text-sm" placeholder="跳转链接">
+            </div>
+
+            <div class="flex gap-3 pt-2">
+                <button @click="showAddModal = false; isAddingToFavorites = false;"
+                        class="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl transition">
+                    取消
+                </button>
+                <button @click="handleAdd"
+                        class="flex-1 py-3 bg-indigo-600 text-white
+             font-bold rounded-xl shadow-lg shadow-indigo-200 transition">
+                    {{ isAddingToFavorites ? '确认收藏' : '确认添加' }}
+                </button>
+            </div>
+        </div>
         </div>
     </transition>
 
@@ -356,7 +902,7 @@
                     </div>
                     <h3 class="text-xl font-bold text-slate-800">确认删除？</h3>
                     <p class="text-slate-500 mt-2">歌曲 <span
-                                class="font-semibold text-slate-700">"{{ deletingSong.title }}"</span> 将被移除。</p>
+                        class="font-semibold text-slate-700">"{{ deletingSong.title }}"</span> 将被移除。</p>
                 </div>
                 <div class="flex space-x-3">
                     <button @click="deletingSong = null"
@@ -550,7 +1096,7 @@
     <div class="fixed bottom-0 left-0 right-0 z-40 px-4 pb-2 pt-2 bg-white/80 backdrop-blur-md border-t border-slate-100 flex items-center justify-between max-w-md mx-auto">
         <button @click="handleRefresh" class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90">
             <svg :class="{ 'animate-spin-once': isRefreshing }"
-                    width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                 width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.85.83 6.72 2.25L21 8"></path>
                 <polyline points="21 3 21 8 16 8"></polyline>
             </svg>
@@ -572,9 +1118,9 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
                 </svg>
             </button>
-<!--            <a href="https://github.com/StarFreedomX/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
-                GitHub
-            </a>-->
+            <!--            <a href="https://github.com/StarFreedomX/ktv-song-web" target="_blank" class="-mt-3 text-[10px] text-slate-300 hover:text-indigo-400 transition-colors font-medium">
+                            GitHub
+                        </a>-->
         </div>
 
         <button @click="nextSong"
@@ -619,12 +1165,7 @@
     </transition>
 
     <div class="h-24"></div>
-</div>
 
-<script type="module">
-    import SongRoomApp from './songRoom.js';
-    const { createApp } = Vue;
-    createApp(SongRoomApp).mount('#app');
-</script>
-</body>
-</html>
+</template>
+
+
