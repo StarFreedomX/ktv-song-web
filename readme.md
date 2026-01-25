@@ -4,10 +4,6 @@ KTV Song List Web
 
 前端支持自动解析b站分享字符串
 
-使用方法(确保安装了yarn/npm/pnpm等和Node.js)
-
-注: 需要先启动redis服务，否则数据无法持久化
-
 ## 启动方式
 
 ### 使用 Docker Compose 启动
@@ -23,33 +19,35 @@ KTV Song List Web
 ```yml
 # docker-compose.yml
 services:
-  ktv-server:
-    image: starfreedomx/ktv-song-web:latest
-    container_name: k-mlw-worker-1
-    ports:
-      - "5823:5823"
-    environment:
-      - PORT=5823
-      - HOST=0.0.0.0
-      - REDIS_URL=redis://redis:6379
-      - NODE_ENV=production
-    depends_on:
-      - redis
-    restart: always
+    # 后端服务
+    ktv-web-backend:
+        image: ghcr.io/starfreedomx/ktv-song-web-backend:latest
+        container_name: ktv-web-backend
+        restart: always
+        depends_on:
+            - redis
 
-  redis:
-    image: redis:alpine
-    container_name: k-mlw-redis-1
-    # 为了防止已有redis服务的影响，不向外暴露端口
-    # 如果需要在主机访问这个redis，把下面的注释删除
-    # ports:
-    #  - "6379:6379"
-    volumes:
-      - ktv_redis_data:/data
-    restart: always
+    # 前端服务
+    ktv-web-frontend:
+        image: ghcr.io/starfreedomx/ktv-song-web-frontend:latest
+        container_name: ktv-web-frontend
+        restart: always
+        ports:
+            - "5526:5526"
+        depends_on:
+            - ktv-web-backend
+
+    # Redis 数据库
+    redis:
+        image: redis:alpine
+        container_name: ktv-web-redis
+        restart: always
+        command: redis-server --appendonly yes
+        volumes:
+            - redis_data:/data
 
 volumes:
-  ktv_redis_data:
+    redis_data:
 ```
 
 启动
@@ -59,6 +57,44 @@ docker compose up -d
 # 如果使用旧版docker compose (v1),则使用docker-compose up -d
 ```
 
+#### 默认配置
+
+```yaml
+ktv-web-backend:
+    # ......
+    environment:
+        # 监听端口
+        - PORT=5823
+        # 监听HOST
+        # Docker环境默认值为0.0.0.0
+        # 其他环境默认值为localhost
+        - HOST=0.0.0.0
+        # 日志模式
+        - DEBUG_MODE=info
+        # REDIS数据库地址
+        # Docker环境默认值为redis://redis:6379
+        # 其他环境默认值为redis://localhost:6379
+        - REDIS_URL=redis://redis:6379
+        # 数据库歌曲缓存过期时间 默认 1 day
+        - CACHE_DATA_EXPIRE_TIME=86400000
+        # 内存中歌曲操作过期时间 默认 5 min
+        - CACHE_OP_EXPIRE_TIME=300000
+ktv-web-frontend:
+    # ......
+    environment:
+        # 后端地址
+        # Docker环境默认值为http://ktv-web-backend:5823
+        # 其他环境默认值为http://localhost:5823
+        - BACKEND_URL=http://ktv-web-backend:5823
+```
+
+### GitHub Release包启动
+
+1. 前往[Release](https://github.com/StarFreedomX/ktv-song-web/releases)页面下载构建好的包
+2. 解压，进入解压后的目录
+3. 执行`pnpm install`
+4. 运行`pnpm start`
+
 ### 本地构建启动
 
 ```shell
@@ -66,39 +102,37 @@ git clone https://github.com/StarFreedomX/ktv-song-web.git
 
 cd ktv-song-web
 
-yarn install
-# npm install
-# pnpm install
+# 如果没有安装pnpm，运行下面这行
+# npm install -g pnpm
 
-yarn build
-# npm run build
-# pnpm build
+pnpm install
 
+pnpm build
+
+# 接下来可以进入frontend backend文件夹
 # 复制一份 .env 到 .env.local
 # 然后在 .env.local 中修改你想修改的配置
 
 # 启动
-yarn start
-# npm run start
-# pnpm start
+pnpm start
 ```
 
-### TS模式启动
-```shell
-git clone https://github.com/StarFreedomX/ktv-song-web.git
-cd ktv-song-web
-yarn install # 或npm/pnpm等
-yarn start-ts # 或npm/pnpm等
-```
+默认环境见上方 [默认配置](#默认配置)
 
 ### 开发模式启动
 ```shell
 git clone https://github.com/StarFreedomX/ktv-song-web.git
 cd ktv-song-web
-yarn install # 或npm/pnpm等
-yarn dev # 或npm/pnpm等
-# 如果需要监听文件变化，使用这个
-# yarn dev-watch # 或npm/pnpm等
+pnpm install
+pnpm dev
 ```
+
+默认环境见上方 [默认配置](#默认配置)
+
+### 单独启动
+
+本项目支持单独启动前端和后端
+
+相关启动方式可以参考对应文件夹的`package.json`文件
 
 应用将运行在 `http://localhost:5823`。
