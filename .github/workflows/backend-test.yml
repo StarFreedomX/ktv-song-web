@@ -1,6 +1,5 @@
 name: Node.js Backend CI
 
-# 触发条件：当代码推送到 master 分支，或者有人提交 Pull Request 到 master 时触发
 on:
     push:
         branches: [ "master" ]
@@ -15,15 +14,9 @@ jobs:
     build-and-test:
         runs-on: ubuntu-latest
 
-        # 设置默认的工作目录，这样下面的所有 run 命令都会在 backend 文件夹下执行
-        defaults:
-            run:
-                working-directory: ./backend
-
         strategy:
             matrix:
-                # 这里指定 Node.js 版本。
-                # 虽然你的 types 引用了 node 25，但建议 CI 使用稳定版 (LTS) 如 20 或 22
+                # 建议使用稳定版 20 和 22
                 node-version: [ 20.x, 22.x ]
 
         steps:
@@ -31,21 +24,26 @@ jobs:
             -   name: Checkout code
                 uses: actions/checkout@v4
 
-            # 2. 安装 Node.js 环境
+            # 2. 安装 pnpm (必须在 setup-node 之前)
+            -   name: Install pnpm
+                uses: pnpm/action-setup@v4
+                with:
+                    version: 10
+
+            # 3. 安装 Node.js 环境
             -   name: Use Node.js ${{ matrix.node-version }}
                 uses: actions/setup-node@v4
                 with:
                     node-version: ${{ matrix.node-version }}
-                    cache: 'npm' # 自动缓存 npm 依赖，加快构建速度
-                    cache-dependency-path: backend/package-lock.json
+                    # 修改为缓存 pnpm 依赖
+                    cache: 'pnpm'
 
-            # 3. 安装依赖 (npm ci 比 npm install 更适合 CI 环境，它严格依据 package-lock.json)
+            # 4. 安装依赖
+            # pnpm install --frozen-lockfile 相当于 npm ci，严格依据 pnpm-lock.yaml
             -   name: Install dependencies
-                run: npm ci
-                # 如果你没有 package-lock.json，请改用: npm install
+                run: pnpm install --frozen-lockfile
 
-            # 4. 执行测试
-            # 这会调用你在 package.json 中配置的 "test": "jest"
-            # 它会自动读取你提交的 jest.config.js 并编译 TypeScript
-            -   name: Run tests
-                run: npm test
+            # 5. 执行后端测试
+            # 使用 --filter 指定只在 backend 文件夹运行测试脚本
+            -   name: Run backend tests
+                run: pnpm --filter ./backend test
