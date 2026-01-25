@@ -4,7 +4,7 @@ on:
     push:
         tags:
             - 'v*'
-    workflow_dispatch: # 允许手动触发测试
+    workflow_dispatch:
 
 jobs:
     release:
@@ -22,35 +22,58 @@ jobs:
                 with:
                     version: 10
 
-            # --- Backend 处理 ---
-            -   name: Setup Backend Node
+            -   name: Setup Node
                 uses: actions/setup-node@v4
                 with:
                     node-version: 22
                     cache: 'pnpm'
-                    cache-dependency-path: backend/pnpm-lock.yaml
 
-            -   name: Build and Package Backend
-                working-directory: ./backend
+            # --- 1. 统一安装与构建 ---
+            -   name: Install and Build
                 run: |
-                    pnpm install --frozen-lockfile
-                    pnpm run build
-                    zip -r ../backend-${{ github.ref_name }}.zip lib package.json pnpm-lock.yaml .env
+                    pnpm install
+                    pnpm -r build
 
-            # --- Frontend 处理 ---
-            -   name: Setup Frontend Node
-                uses: actions/setup-node@v4
-                with:
-                    node-version: 22
-                    cache: 'pnpm'
-                    cache-dependency-path: frontend/pnpm-lock.yaml
-
-            -   name: Build and Package Frontend
-                working-directory: ./frontend
+            # --- 2. 打包独立后端 ---
+            -   name: Package Backend
                 run: |
-                    pnpm install --frozen-lockfile
-                    pnpm run build
-                    zip -r ../frontend-${{ github.ref_name }}.zip dist start-frontend.cjs package.json pnpm-lock.yaml .env
+                    mkdir -p release-backend
+                    # 只拷贝后端文件夹内的东西
+                    cp -r backend/lib backend/package.json backend/pnpm-lock.yaml release-backend/
+                    # 如果后端有 .env 则拷贝
+                    [ -f "backend/.env" ] && cp backend/.env release-backend/
+                    # 注入根目录文档
+                    cp readme.md LICENSE release-backend/
+                    cd release-backend && zip -r ../ktv-song-web-backend-${{ github.ref_name }}.zip .
+
+            # --- 3. 打包独立前端 ---
+            -   name: Package Frontend
+                run: |
+                    mkdir -p release-frontend
+                    cp -r frontend/dist frontend/start-frontend.cjs frontend/package.json frontend/pnpm-lock.yaml release-frontend/
+                    # 如果前端有 .env 则拷贝
+                    [ -f "frontend/.env" ] && cp frontend/.env release-frontend/
+                    # 注入根目录文档
+                    cp readme.md LICENSE release-frontend/
+                    cd release-frontend && zip -r ../ktv-song-web-frontend-${{ github.ref_name }}.zip .
+
+            # --- 4. 打包两个工作区 ---
+            -   name: Package Unified Workspace
+                run: |
+                    mkdir -p unified-bundle/backend unified-bundle/frontend
+
+                    # 拷贝后端完整产物 (含其内部 .env)
+                    cp -r backend/lib backend/package.json unified-bundle/backend/
+                    [ -f "backend/.env" ] && cp backend/.env unified-bundle/backend/
+
+                    # 拷贝前端完整产物 (含其内部 .env)
+                    cp -r frontend/dist frontend/start-frontend.cjs frontend/package.json unified-bundle/frontend/
+                    [ -f "frontend/.env" ] && cp frontend/.env unified-bundle/frontend/
+
+                    # 拷贝工作区核心配置文件 (不包含根目录不存在的 .env)
+                    cp pnpm-workspace.yaml pnpm-lock.yaml package.json readme.md LICENSE unified-bundle/
+
+                    cd unified-bundle && zip -r ../ktv-song-web-unified-${{ github.ref_name }}.zip .
 
             # --- 执行发布 ---
             -   name: Create GitHub Release
@@ -59,7 +82,8 @@ jobs:
                     name: Release ${{ github.ref_name }}
                     generate_release_notes: true
                     files: |
-                        backend-${{ github.ref_name }}.zip
-                        frontend-${{ github.ref_name }}.zip
+                        ktv-song-web-backend-${{ github.ref_name }}.zip
+                        ktv-song-web-frontend-${{ github.ref_name }}.zip
+                        ktv-song-web-unified-${{ github.ref_name }}.zip
                 env:
                     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
