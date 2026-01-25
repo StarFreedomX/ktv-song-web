@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 dotenv.config({ path: ['.env.local', '.env'] });
 
 const app = express();
-const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:5823';
+const backendUrl = process.env.BACKEND_URL || 'http://localhost:5823';
 console.log('env backend url:', backendUrl)
 const apiUrl = new URL('/api', backendUrl);
 app.use('/api', createProxyMiddleware({
