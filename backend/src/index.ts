@@ -3,11 +3,9 @@ import ktvLogger from "@/logger";
 
 ktvLogger.info('Node Env is: ', process.env.NODE_ENV);
 ktvLogger.info('Debug Mode is: ', process.env.DEBUG_MODE);
-// assets 目录
-const staticDir = './static';
 
 // 启动 KTV Koa 服务器
-const koaApp = runKTVServer(staticDir, process.env.REDIS_URL);
+const koaApp = runKTVServer(process.env.REDIS_URL);
 koaApp.use(async (ctx) => {
     ctx.status = 404;
     ctx.body = '404 Not Found - 路径错误';
@@ -21,8 +19,7 @@ if (isNaN(port)) {
 }
 
 const server = koaApp.listen(port, host, () => {
-    ktvLogger.info(`HTTP Server running on http://${host}:${port}`);
-    ktvLogger.info(`Website is available on http://localhost:${port}`);
+    ktvLogger.info(`Backend HTTP Server running on http://${host}:${port}`);
 });
 
 function shutdown(signal: string) {

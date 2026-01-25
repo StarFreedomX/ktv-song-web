@@ -321,7 +321,10 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 function getHash(songs: Song[]) {
     if (!songs || songs.length === 0) return "EMPTY_LIST_HASH"; // 给空列表一个固定标识
     const str = songs.map(s => `${s.id}:${s.title}:${s.url}:${s.state || 'queued'}:${s.addedBy || ''}`).join('|');
-    return crypto.createHash('sha256').update(str).digest('hex');
+    ktvLogger.debug('hash src:', str)
+    const hashValue = crypto.createHash('sha256').update(str).digest('hex');
+    ktvLogger.debug('hash value:', hashValue);
+    return hashValue;
 }
 
 export { resolveBilibiliData, songOperation, getHash };
