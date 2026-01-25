@@ -1,15 +1,24 @@
-name: Node.js CI
+name: Node.js Backend CI
 
 # 触发条件：当代码推送到 master 分支，或者有人提交 Pull Request 到 master 时触发
 on:
   push:
     branches: [ "master" ]
+    paths:
+        - 'backend/**'
   pull_request:
     branches: [ "master" ]
+    paths:
+        - 'backend/**'
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
+    # 设置默认的工作目录，这样下面的所有 run 命令都会在 backend 文件夹下执行
+    defaults:
+      run:
+         working-directory: ./backend
 
     strategy:
       matrix:
@@ -28,6 +37,7 @@ jobs:
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm' # 自动缓存 npm 依赖，加快构建速度
+        cache-dependency-path: backend/package-lock.json
 
     # 3. 安装依赖 (npm ci 比 npm install 更适合 CI 环境，它严格依据 package-lock.json)
     - name: Install dependencies
