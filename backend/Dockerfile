@@ -29,5 +29,11 @@ COPY --from=builder /app/backend/lib ./backend/lib
 # 安装生产环境依赖
 RUN corepack enable && pnpm install --prod --frozen-lockfile
 
+# 环境变量设置
+ENV NODE_ENV=production
+ENV REDIS_URL=redis://redis:6379
+ENV DEBUG_MODE=info
+ENV HOST=0.0.0.0
+
 EXPOSE 5823
 CMD ["node", "backend/lib/index.js"]

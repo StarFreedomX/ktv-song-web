@@ -31,6 +31,7 @@ RUN pnpm install --prod --frozen-lockfile
 # 环境变量设置
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
+ENV BACKEND_URL=http://ktv-web-backend:5823
 # 前端监听端口
 EXPOSE 5526
 
