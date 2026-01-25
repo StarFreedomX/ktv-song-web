@@ -1,5 +1,5 @@
 import * as dotenv from "dotenv";
-dotenv.config({ path: ['.env', '.env.example'] });
+dotenv.config({ path: ['.env.local', '.env'] });
 // dotenv.config({ path:  });
 import { debugType,debugTypeArray } from '@/types'
 export function logger(type: string, message: any) {

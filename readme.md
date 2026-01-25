@@ -74,8 +74,8 @@ yarn build
 # npm run build
 # pnpm build
 
-# 复制一份 .env.example 到 .env
-# 然后在 .env 中修改你想修改的配置
+# 复制一份 .env 到 .env.local
+# 然后在 .env.local 中修改你想修改的配置
 
 # 启动
 yarn start
