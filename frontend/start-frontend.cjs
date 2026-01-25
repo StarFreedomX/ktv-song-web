@@ -2,15 +2,6 @@ const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const path = require('path');
 const dotenv = require('dotenv');
-const fs = require("node:fs");
-
-const envPath = path.join(__dirname, '.env');
-const envLocalPath = path.join(__dirname, '.env.local');
-
-if (!fs.existsSync(envLocalPath) && fs.existsSync(envPath)) {
-    console.log('.env.local 不存在，正在根据 .env 自动创建...');
-    fs.copyFileSync(envPath, envLocalPath);
-}
 
 dotenv.config({ path: ['.env.local', '.env'] });
 
