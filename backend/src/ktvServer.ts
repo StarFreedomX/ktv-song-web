@@ -7,7 +7,6 @@ import { Storage } from "@/storage";
 import { getHash, resolveBilibiliData, songOperation } from "@/utils";
 import { OpLog, Song, SongOperationBody } from "@/types";
 
-
 const DATABASE_NAME = "ktv_room" as const;
 
 export function runKTVServer(redisUrl?: string) {
@@ -181,7 +180,7 @@ export function runKTVServer(redisUrl?: string) {
 
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
-        const { roomId: roomIds} = koaCtx.query;
+        const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         if (!ROOM_ID_REGEX.test(roomId)) {
             ktvLogger.debug('REJECT', 'Invalid Room ID')
@@ -200,7 +199,7 @@ export function runKTVServer(redisUrl?: string) {
                 // 更新 URL
                 song.url = biliData.url;
                 if (!song.title) {
-                    song.title = `${song.title}${biliData.pNum?`(p${biliData.pNum})`:''}`;
+                    song.title = `${song.title}${biliData.pNum ? `(p${biliData.pNum})` : ''}`;
                 }
             }
         }
@@ -210,18 +209,18 @@ export function runKTVServer(redisUrl?: string) {
             roomSongsCache[roomId] = (await storage.get<Song[]>(DATABASE_NAME, roomId) || []);
         }
         const allSongs = [...roomSongsCache[roomId]];
-        const waitingLength = allSongs.filter(s=>s.state!=='sung').length;
+        const waitingLength = allSongs.filter(s => s.state !== 'sung').length;
         const serverHash = getHash(allSongs);
-        const alreadyHad = allSongs.some(s=>s.id===song.id)
+        const alreadyHad = allSongs.some(s => s.id === song.id)
 
 
         const currentOp: OpLog = {
             // 这是提前配置好了变基后的数据
-            baseIdArray: allSongs.map(s=>s.id),
+            baseIdArray: allSongs.map(s => s.id),
             baseHash: serverHash,
             song: song,
             // 这里的toIndex不是变基后的，songOperation函数内会自动修正
-            toIndex: toIndex >= waitingLength ? allSongs.length - (alreadyHad?1:0) : toIndex,
+            toIndex: toIndex >= waitingLength ? allSongs.length - (alreadyHad ? 1 : 0) : toIndex,
             timestamp: Date.now()
         };
         // ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
@@ -247,8 +246,8 @@ export function runKTVServer(redisUrl?: string) {
             return koaCtx.body = { success: false, code: 'REJECT' };
         }
 
-        const baseLog =  logs.at(hitIdx);
-        const baseIdArray = latest ? allSongs.map(s=>s.id) : [...baseLog.baseIdArray];
+        const baseLog = logs.at(hitIdx);
+        const baseIdArray = latest ? allSongs.map(s => s.id) : [...baseLog.baseIdArray];
         // ktvLogger.debug(song?.title,'BASE ARRAY AT:', Date.now())
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
         // ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
