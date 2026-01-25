@@ -12,10 +12,11 @@ if (!fs.existsSync(envLocalPath) && fs.existsSync(envPath)) {
     fs.copyFileSync(envPath, envLocalPath);
 }
 
-dotenv.config({ path: ['.env.local', '.env'] })
+dotenv.config({ path: ['.env.local', '.env'] });
 
 const app = express();
 const backendUrl = process.env.VITE_BACKEND_URL || 'http://localhost:5823';
+console.log('env backend url:', backendUrl)
 const apiUrl = new URL('/api', backendUrl);
 app.use('/api', createProxyMiddleware({
     target: apiUrl.href,
