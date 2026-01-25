@@ -1,0 +1,65 @@
+name: Full Release
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch: # 允许手动触发测试
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+        steps:
+            -   name: Checkout code
+                uses: actions/checkout@v4
+                with:
+                    fetch-depth: 0
+
+            -   name: Install pnpm
+                uses: pnpm/action-setup@v4
+                with:
+                    version: 10
+
+            # --- Backend 处理 ---
+            -   name: Setup Backend Node
+                uses: actions/setup-node@v4
+                with:
+                    node-version: 22
+                    cache: 'pnpm'
+                    cache-dependency-path: backend/pnpm-lock.yaml
+
+            -   name: Build and Package Backend
+                working-directory: ./backend
+                run: |
+                    pnpm install --frozen-lockfile
+                    pnpm run build
+                    zip -r ../backend-${{ github.ref_name }}.zip lib package.json pnpm-lock.yaml .env
+
+            # --- Frontend 处理 ---
+            -   name: Setup Frontend Node
+                uses: actions/setup-node@v4
+                with:
+                    node-version: 22
+                    cache: 'pnpm'
+                    cache-dependency-path: frontend/pnpm-lock.yaml
+
+            -   name: Build and Package Frontend
+                working-directory: ./frontend
+                run: |
+                    pnpm install --frozen-lockfile
+                    pnpm run build
+                    zip -r ../frontend-${{ github.ref_name }}.zip dist start-frontend.cjs package.json pnpm-lock.yaml .env
+
+            # --- 执行发布 ---
+            -   name: Create GitHub Release
+                uses: softprops/action-gh-release@v2
+                with:
+                    name: Release ${{ github.ref_name }}
+                    generate_release_notes: true
+                    files: |
+                        backend-${{ github.ref_name }}.zip
+                        frontend-${{ github.ref_name }}.zip
+                env:
+                    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
