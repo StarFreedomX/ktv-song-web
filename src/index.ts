@@ -22,7 +22,7 @@ if (isNaN(port)) {
 
 const server = koaApp.listen(port, host, () => {
     ktvLogger.info(`HTTP Server running on http://${host}:${port}`);
-    ktvLogger.info(`Website is available on http://localhost:${port}`);
+    // ktvLogger.info(`Website is available on http://localhost:${port}`);
 });
 
 function shutdown(signal: string) {

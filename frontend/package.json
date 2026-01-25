@@ -7,7 +7,8 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "start": "node start-frontend.cjs"
     },
     "keywords": [],
     "author": "",
@@ -16,6 +17,7 @@
     "dependencies": {
         "@tailwindcss/postcss": "^4.1.18",
         "autoprefixer": "^10.4.23",
+        "dotenv": "^17.2.3",
         "express": "^5.2.1",
         "http-proxy-middleware": "^3.0.5",
         "js-sha256": "^0.11.1",

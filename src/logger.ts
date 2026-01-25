@@ -1,7 +1,7 @@
 import * as dotenv from "dotenv";
 dotenv.config({ path: ['.env.local', '.env'] });
 // dotenv.config({ path:  });
-import { debugType,debugTypeArray } from '@/types'
+import { debugType, debugTypeArray } from '@/types'
 export function logger(type: string, message: any) {
     const requestTime = Date.now();
     // hh:mm:ss
