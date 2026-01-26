@@ -27,8 +27,6 @@ jobs:
             # 2. 安装 pnpm (必须在 setup-node 之前)
             -   name: Install pnpm
                 uses: pnpm/action-setup@v4
-                with:
-                    version: 10
 
             # 3. 安装 Node.js 环境
             -   name: Use Node.js ${{ matrix.node-version }}
@@ -37,11 +35,12 @@ jobs:
                     node-version: ${{ matrix.node-version }}
                     # 修改为缓存 pnpm 依赖
                     cache: 'pnpm'
+                    cache-dependency-path: 'pnpm-lock.yaml'
 
             # 4. 安装依赖
             # pnpm install --frozen-lockfile 相当于 npm ci，严格依据 pnpm-lock.yaml
             -   name: Install dependencies
-                run: pnpm install --frozen-lockfile
+                run: pnpm install --filter ./backend... --frozen-lockfile
 
             # 5. 执行后端测试
             # 使用 --filter 指定只在 backend 文件夹运行测试脚本
