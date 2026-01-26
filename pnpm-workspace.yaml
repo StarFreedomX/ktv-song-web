@@ -1,3 +1,4 @@
+sharedWorkspaceLockfile: false
 packages:
   - backend
   - frontend

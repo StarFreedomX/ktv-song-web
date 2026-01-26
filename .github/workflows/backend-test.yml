@@ -35,7 +35,7 @@ jobs:
                     node-version: ${{ matrix.node-version }}
                     # 修改为缓存 pnpm 依赖
                     cache: 'pnpm'
-                    cache-dependency-path: 'pnpm-lock.yaml'
+                    cache-dependency-path: "**/pnpm-lock.yaml"
 
             # 4. 安装依赖
             # pnpm install --frozen-lockfile 相当于 npm ci，严格依据 pnpm-lock.yaml
