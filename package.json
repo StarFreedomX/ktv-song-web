@@ -1,6 +1,14 @@
 {
     "name": "ktv-song-web",
-    "private": true,
+    "description": "KTV Song List Web",
+    "contributors": [
+        "StarFreedomX <starfreedomx@outlook.com>"
+    ],
+    "version": "0.3.1",
+    "license": "MIT",
+    "keywords": ["ktv"],
+    "author": "",
+    "packageManager": "pnpm@10.20.0",
     "scripts": {
         "dev": "pnpm -r --parallel dev",
         "dev:backend": "pnpm --filter ./backend dev",

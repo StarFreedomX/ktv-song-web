@@ -4,25 +4,21 @@
     "contributors": [
         "StarFreedomX <starfreedomx@outlook.com>"
     ],
-    "version": "0.3.0",
+    "version": "0.3.1",
     "main": "lib/index.js",
     "typings": "lib/index.d.ts",
+    "license": "MIT",
+    "keywords": ["ktv"],
+    "author": "",
+    "packageManager": "pnpm@10.20.0",
     "scripts": {
         "test": "jest",
         "dev-watch": "cross-env NODE_ENV=development tsx watch ./src/index.ts",
         "dev": "cross-env NODE_ENV=development tsx ./src/index.ts",
-        "start-ts": "cross-env NODE_ENV=production tsx ./src/index.ts",
-        "start": "cross-env NODE_ENV=production node ./lib/index.js",
+        "start-ts": "npx tsx ./src/index.ts",
+        "start": "node ./lib/index.js",
         "build": "node build.mjs"
     },
-    "files": [
-        "lib",
-        "static"
-    ],
-    "license": "MIT",
-    "keywords": [
-        "ktv"
-    ],
     "dependencies": {
         "@koa/router": "^15.1.1",
         "axios": "^1.13.2",

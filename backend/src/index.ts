@@ -1,6 +1,6 @@
 import { runKTVServer } from "@/ktvServer";
 import ktvLogger from "@/logger";
-
+process.env.NODE_ENV||='production';
 ktvLogger.info('Node Env is: ', process.env.NODE_ENV);
 ktvLogger.info('Debug Mode is: ', process.env.DEBUG_MODE);
 
