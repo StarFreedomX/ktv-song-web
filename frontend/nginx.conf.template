@@ -1,0 +1,26 @@
+server {
+    listen 5526;
+    server_name localhost;
+
+    # 静态资源根目录
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # 1. 反向代理 /api
+    location /api/ {
+        # 注意：这里使用 Docker 内部的服务名，或者通过环境变量注入
+        proxy_pass http://ktv-web-backend:5823/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # 2. 静态托管 & 3. SPA 路由支持 (解决刷新 404 问题)
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # 开启 gzip 压缩 (可选，推荐)
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml;
+}

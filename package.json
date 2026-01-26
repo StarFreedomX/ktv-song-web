@@ -10,6 +10,11 @@
         "start:frontend": "pnpm --filter ./frontend start",
         "build": "pnpm -r --parallel build",
         "build:backend": "pnpm --filter ./backend build",
-        "build:frontend": "pnpm --filter ./frontend build"
+        "build:frontend": "pnpm --filter ./frontend build",
+        "docker-build": "docker-compose up -d --build --force-recreate --remove-orphans",
+        "docker-build-proxy": "cross-env HTTP_PROXY=http://172.19.160.1:7890 HTTPS_PROXY=http://172.19.160.1:7890 docker-compose up -d --build --force-recreate --remove-orphans"
+    },
+    "devDependencies": {
+        "cross-env": "^10.1.0"
     }
 }

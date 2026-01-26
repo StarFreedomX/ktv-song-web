@@ -1,0 +1,44 @@
+services:
+    # 后端服务
+    ktv-web-backend:
+        build:
+            context: .
+            dockerfile: backend/Dockerfile # 指向后端的 Dockerfile 路径
+        image: ghcr.io/starfreedomx/ktv-song-web-backend:latest
+        container_name: ktv-web-backend
+        restart: always
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        depends_on:
+            - redis
+
+    # 前端服务
+    ktv-web-frontend:
+        build:
+            context: .
+            dockerfile: frontend/Dockerfile # 指向前端的 Dockerfile 路径
+            args:
+                # 如果你 Dockerfile 内部需要代理下载依赖，可以传入 build-arg
+                - HTTP_PROXY=${HTTP_PROXY}
+                - HTTPS_PROXY=${HTTPS_PROXY}
+        image: ghcr.io/starfreedomx/ktv-song-web-frontend:latest
+        container_name: ktv-web-frontend
+        restart: always
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        ports:
+            - "5526:5526"
+        depends_on:
+            - ktv-web-backend
+
+    # Redis 数据库
+    redis:
+        image: redis:alpine
+        container_name: ktv-web-redis
+        restart: always
+        command: redis-server --appendonly yes
+        volumes:
+            - redis_data:/data
+
+volumes:
+    redis_data:

@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      cross-env:
+        specifier: ^10.1.0
+        version: 10.1.0
 
   backend:
     dependencies:
@@ -15,7 +19,7 @@ importers:
         version: 15.3.0(koa@3.1.1)
       axios:
         specifier: ^1.13.2
-        version: 1.13.2
+        version: 1.13.3
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -65,12 +69,6 @@ importers:
 
   frontend:
     dependencies:
-      '@tailwindcss/postcss':
-        specifier: ^4.1.18
-        version: 4.1.18
-      autoprefixer:
-        specifier: ^10.4.23
-        version: 10.4.23(postcss@8.5.6)
       dotenv:
         specifier: ^17.2.3
         version: 17.2.3
@@ -80,12 +78,28 @@ importers:
       http-proxy-middleware:
         specifier: ^3.0.5
         version: 3.0.5
+    devDependencies:
+      '@tailwindcss/postcss':
+        specifier: ^4.1.18
+        version: 4.1.18
+      '@vitejs/plugin-vue':
+        specifier: ^6.0.3
+        version: 6.0.3(vite@7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))(vue@3.5.27(typescript@5.9.3))
+      autoprefixer:
+        specifier: ^10.4.23
+        version: 10.4.23(postcss@8.5.6)
       js-sha256:
         specifier: ^0.11.1
         version: 0.11.1
       postcss:
         specifier: ^8.5.6
         version: 8.5.6
+      tailwindcss:
+        specifier: ^4.1.18
+        version: 4.1.18
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
       vue:
         specifier: ^3.5.27
         version: 3.5.27(typescript@5.9.3)
@@ -95,16 +109,6 @@ importers:
       vuedraggable:
         specifier: ^4.1.0
         version: 4.1.0(vue@3.5.27(typescript@5.9.3))
-    devDependencies:
-      '@vitejs/plugin-vue':
-        specifier: ^6.0.3
-        version: 6.0.3(vite@7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0))(vue@3.5.27(typescript@5.9.3))
-      tailwindcss:
-        specifier: ^4.1.18
-        version: 4.1.18
-      vite:
-        specifier: ^7.3.1
-        version: 7.3.1(@types/node@25.0.10)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.21.0)
 
 packages:
 
@@ -1113,8 +1117,8 @@ packages:
     peerDependencies:
       postcss: ^8.1.0
 
-  axios@1.13.2:
-    resolution: {integrity: sha512-VPk9ebNqPcy5lRGuSlKx752IlDatOjT9paPlm8A7yOuW2Fbvp4X3JznJtT4f0GzGLLiWE9W8onz51SqLYwzGaA==}
+  axios@1.13.3:
+    resolution: {integrity: sha512-ERT8kdX7DZjtUm7IitEyV7InTHAF42iJuMArIiDIV5YtPanJkgw4hw5Dyg9fh0mihdWNn1GKaeIWErfe56UQ1g==}
 
   babel-jest@30.2.0:
     resolution: {integrity: sha512-0YiBEOxWqKkSQWL9nNGGEgndoeL0ZpWrbLMNL5u/Kaxrli3Eaxlt3ZtIDktEvXt4L/R9r3ODr2zKwGM/2BjxVw==}
@@ -3592,7 +3596,7 @@ snapshots:
       postcss: 8.5.6
       postcss-value-parser: 4.2.0
 
-  axios@1.13.2:
+  axios@1.13.3:
     dependencies:
       follow-redirects: 1.15.11(debug@4.4.3)
       form-data: 4.0.5
