@@ -111,7 +111,7 @@ pnpm install # 可以使用`--frozen-lockfile`来锁定依赖版本
 pnpm build
 
 # 清理开发依赖
-pnpm prune --prod
+pnpm i --prod
 
 # 接下来可以进入frontend backend文件夹
 # 复制一份 .env 到 .env.local
