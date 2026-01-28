@@ -24,9 +24,7 @@ if (roomId.value) {
 }
 
 // 字符串常量
-const EMPTY_HASH = "EMPTY_LIST_HASH"; // 与后端 getHash 函数中的占位符一致
-const commitApiUrl = "api/songOperation"
-const loadSongListUrl = "api/songListInfo"
+const EMPTY_HASH = "EMPTY_LIST_HASH";
 
 // 基础设定
 const lastHash = ref(EMPTY_HASH);
@@ -34,6 +32,14 @@ const nickname = ref(localStorage.getItem('ktv_nickname') || '');
 const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
 const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
 const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
+
+// api接口
+const commitApiUrl = "api/songOperation"
+const loadSongListUrl = "api/songListInfo"
+const nextSongUrl = "api/nextSong"
+const shuffleSongUrl = "api/shuffle"
+const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value}&nickname=${encodeURIComponent(nickname.value || '')}`;
 
 // 控制页面元素的变量
 /** @type {import('vue').Ref<String>} */
@@ -362,9 +368,10 @@ const undoSung = async (song) => {
     });
 };
 
+// TODO 整合到songOperation
 const nextSong = async () => {
     try {
-        const res = await fetch(`api/nextSong?roomId=${roomId.value}`, {
+        const res = await fetch(`${nextSongUrl}?roomId=${roomId.value}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
                 idArrayHash: lastHash.value
             })
@@ -382,7 +389,7 @@ const nextSong = async () => {
 async function shuffleSongs() {
     showShuffleConfirm.value = false;
     try {
-        const response = await fetch(`api/shuffle?roomId=${roomId.value}`, { method: 'POST' });
+        const response = await fetch(`${shuffleSongUrl}?roomId=${roomId.value}`, { method: 'POST' });
         const result = await response.json();
         if (result.success) {
             load(); // 重新加载列表
@@ -564,16 +571,48 @@ const saveNickname = () => {
     }
 };
 
-let timer
+let socket;
+// 初始化 WebSocket 连接
+const initWebSocket = () => {
+    socket = new WebSocket(wsUrl);
+    console.log("WebSocket initialized");
+
+    socket.onmessage = async (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            // 当服务端通知更新，且 Hash 与本地不一致时 load
+            if (data.type === 'UPDATE' && data.hash !== lastHash.value) {
+                await load();
+            }
+        } catch (e) {
+            console.error("WS Message Error:", e);
+        }
+    };
+
+    socket.onclose = () => {
+        console.warn('WS 连接已断开，3秒后尝试重连...');
+        setTimeout(initWebSocket, 3000); // 重连
+    };
+
+    socket.onerror = (err) => {
+        console.error('WS 发生错误:', err);
+    };
+};
+
 onMounted(() => {
     if (!nickname.value) {
         showNicknameModal.value = true;
     }
-    load()
-    // 每 3 秒同步一次数据
-    timer = setInterval(load, 5000)
-})
-onUnmounted(() => clearInterval(timer))
+    load(); // 首次进入拉取数据
+    initWebSocket();
+});
+
+onUnmounted(() => {
+    // 组件卸载时关闭连接
+    if (socket) {
+        socket.close();
+    }
+});
 
 </script>
 

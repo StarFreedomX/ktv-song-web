@@ -19,7 +19,8 @@ console.log('env backend url:', backendUrl)
 const apiUrl = new URL('/api', backendUrl);
 app.use('/api', createProxyMiddleware({
     target: apiUrl.href,
-    changeOrigin: true
+    changeOrigin: true,
+    ws: true
 }));
 
 app.use(express.static(path.join(__dirname, 'dist')));

@@ -3,14 +3,15 @@ import ktvLogger from "@/logger";
 import Koa from "koa";
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
+import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
 import { getHash, resolveBilibiliData, songOperation } from "@/utils";
-import { OpLog, Song, SongOperationBody } from "@/types";
+import { IdentifiedWebSocket, OpLog, Song, SongOperationBody, WsReadyState } from "@/types";
 
 const DATABASE_NAME = "ktv_room" as const;
 
 export function runKTVServer(redisUrl?: string) {
-    const app = new Koa();
+    const app = websockify(new Koa());
     const router = new Router();
     app.use(bodyParser());
 
@@ -39,6 +40,42 @@ export function runKTVServer(redisUrl?: string) {
             }
         }
     }, CACHE_OP_EXPIRE_TIME);
+
+    // 存储房间 ID 与客户端集合的映射
+    const roomClients = new Map<string, Set<IdentifiedWebSocket>>();
+    // 封装广播通知函数
+    const notifyUpdate = (roomId: string, hash: string) => {
+        const clients = roomClients.get(roomId);
+        if (clients) {
+            const message = JSON.stringify({ type: 'UPDATE', hash });
+            clients.forEach(ws => {
+                if (ws.readyState === WsReadyState.OPEN) {
+                    ws.send(message);
+                    ktvLogger.debug(`[WS-NOTIFY] -> Room: ${roomId} | Target: ${ws.clientId} | Hash: ${hash.slice(0, 6)}`);
+                }
+            });
+        }
+    };
+
+    // WebSocket 路由：处理连接与房间加入
+    const wsRouter = new Router();
+    wsRouter.all('/api/ws', async (ctx) => {
+        const roomId = ctx.query.roomId as string;
+        if (!roomId) return ctx.websocket.close();
+        const clientId = (ctx.query.nickname as string) || `anon-${Math.random().toString(36).slice(-4)}`;
+        const ws = ctx.websocket as IdentifiedWebSocket;
+        if (!roomClients.has(roomId)) roomClients.set(roomId, new Set());
+        const clients = roomClients.get(roomId)!;
+        clients.add(ws);
+
+        ktvLogger.info(`WS Connected: Room ${roomId} | Client: ${clientId} | Total: ${clients.size}`);
+
+        ctx.websocket.on('close', () => {
+            clients.delete(ws);
+            if (clients.size === 0) roomClients.delete(roomId);
+            ktvLogger.info(`WS Leave: Room: ${roomId} | Client: ${clientId}`);
+        });
+    });
 
 
     // 获取歌曲列表及当前哈希
@@ -96,8 +133,9 @@ export function runKTVServer(redisUrl?: string) {
         roomSongsCache[roomId] = finalSongs;
         roomOpCache[roomId] = [];
         await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
-
-        koaCtx.body = { success: true, hash: getHash(finalSongs) };
+        const finalHash = getHash(finalSongs);
+        koaCtx.body = { success: true, hash: finalHash };
+        notifyUpdate(roomId, finalHash)
     });
 
     // 切歌接口 (下一首)
@@ -157,6 +195,7 @@ export function runKTVServer(redisUrl?: string) {
             roomOpCache[roomId] = logs;
             await storage.set(DATABASE_NAME, roomId, finalSongs, CACHE_EXPIRE_TIME);
             koaCtx.body = { success: true, hash: finalHash };
+            notifyUpdate(roomId, finalHash)
         } catch (e) {
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
@@ -274,6 +313,7 @@ export function runKTVServer(redisUrl?: string) {
             // ktvLogger.debug(currentOp?.song?.title,'CACHE AT:', Date.now())
             koaCtx.body = { success: true, hash: finalHash, song };
             // console.log(finalSongs)
+            notifyUpdate(roomId, finalHash)
         } catch (e) {
             ktvLogger.error("Operation re-run failed:", e);
             koaCtx.body = { success: false, code: 'REJECT' };
@@ -281,6 +321,7 @@ export function runKTVServer(redisUrl?: string) {
         }
     });
 
+    app.ws.use(wsRouter.routes() as any);
     app.use(router.routes()).use(router.allowedMethods());
 
     // 返回 app
