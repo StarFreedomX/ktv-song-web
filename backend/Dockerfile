@@ -14,10 +14,15 @@ RUN pnpm install --frozen-lockfile --filter ./backend
 COPY . .
 RUN pnpm --filter ./backend build
 
-RUN pnpm --filter ./backend --prod deploy /prod/backend
+# 运行缩小逻辑
+RUN export PROJECT_ROOT=/app/backend/ && \
+    node /app/backend/scripts/minify-docker.mjs && \
+    rm -rf /app/backend/node_modules && \
+    mv /app/backend/app-minimal/node_modules /app/backend/ && \
+    rm -rf /app/backend/app-minimal
 
 # --- 阶段 2: 运行 ---
-FROM node:22-alpine AS runner
+FROM caomeiyouren/alpine-nodejs-minimize:1.0.0 AS runner
 WORKDIR /app
 
 # 设置环境变量
@@ -26,8 +31,8 @@ ENV NODE_ENV=production \
     DEBUG_MODE=info \
     HOST=0.0.0.0
 
-# 拷贝阶段 1 的产物
-COPY --from=builder /prod/backend ./
+# 拷贝阶段 2 的产物
+COPY --from=builder /app/backend ./
 
 EXPOSE 5823
 CMD ["node", "lib/index.js"]
