@@ -7,6 +7,14 @@ dotenv.config({ path: ['.env.local', '.env'] });
 
 const app = express();
 const backendUrl = process.env.BACKEND_URL || 'http://localhost:5823';
+const port = parseInt(process.env.PORT || '5526');
+const host = process.env.HOST || "localhost";
+
+if (isNaN(port)) {
+    console.error('port is not a number');
+    process.exit(1);
+}
+
 console.log('env backend url:', backendUrl)
 const apiUrl = new URL('/api', backendUrl);
 app.use('/api', createProxyMiddleware({
@@ -19,8 +27,8 @@ app.use(express.static(path.join(__dirname, 'dist')));
 app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'dist/index.html'));
 });
-const server = app.listen(5526, () => {
-    console.log('frontend server running at: http://localhost:5526');
+const server = app.listen(port, host, () => {
+    console.log(`frontend server running at: http://${host}:${port}`);
 });
 const shutdown = (signal) => {
     console.log(`Received ${signal}, shutting down...`);
