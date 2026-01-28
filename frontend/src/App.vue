@@ -14,6 +14,12 @@ import BottomNav from "./components/BottomNav.vue";
 import QueueList from "./components/QueueList.vue";
 import HistoryList from "./components/HistoryList.vue";
 
+const UpdateStatus = Object.freeze({
+    IDLE: 0,
+    WAITING: 1,
+    FETCHING: 2
+});
+
 const route = useRoute();
 const roomIdFromUrl = route.params.roomId;
 const roomId = ref(roomIdFromUrl);
@@ -69,7 +75,8 @@ const pendingJumpUrl = ref(null); // 存储待跳转的 URL
 const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
 const autoInput = ref('');
 const isRefreshing = ref(false);
-
+const updateStatus = ref(UpdateStatus.IDLE);
+const allowUpdate = computed(() => !isDragging.value && !isRefreshing.value);
 
 // 工具函数
 const {
@@ -119,7 +126,17 @@ watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) 
         }
     }
 }, { deep: true });
+watch([allowUpdate, updateStatus], ([canUpdate, status]) => {
+    if (canUpdate && status === UpdateStatus.WAITING) {
+        performUpdate();
+    }
+});
 
+async function performUpdate() {
+    updateStatus.value = UpdateStatus.FETCHING;
+    await load();
+    updateStatus.value = UpdateStatus.IDLE;
+}
 
 // 收藏相关
 const isFavorited = (song) => {
@@ -214,8 +231,11 @@ const commitOp = async (opData) => {
         if (res.success) {
             if (await getHash(songs.value) !== res.hash) {
                 // console.log(songs.value, await getHash(songs.value))
-                await load();
-            } else lastHash.value = res.hash;
+                updateStatus.value = UpdateStatus.WAITING;
+            } else {
+                lastHash.value = res.hash;
+                updateStatus.value = UpdateStatus.IDLE
+            }
             if (res.song && opData.song) {
                 const localSong = songs.value.find(s => s.id === opData.song.id);
                 if (localSong) {
@@ -227,7 +247,7 @@ const commitOp = async (opData) => {
         } else if (res.code === 'REJECT') {
             // 如果被拒绝，说明前端 Hash 过时
             lastHash.value = EMPTY_HASH; // 重置
-            await load();
+            updateStatus.value = UpdateStatus.WAITING;
         }
     } catch (e) {
         console.error("API Error:", e);
@@ -294,7 +314,7 @@ const add = async () => {
     const success = await commitOp({
         song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
     });
-    if (!success) await load();
+    if (!success) updateStatus.value = UpdateStatus.WAITING;
 }
 
 // 点击垃圾桶图标，仅记录要删除的对象并显示弹窗
@@ -348,7 +368,7 @@ const moveToTop = async (song) => {
         }, 10);
 
         if (!success) {
-            await load();
+            updateStatus.value = UpdateStatus.WAITING;
         } else {
             setTimeout(() => {
                 movedItem.isNew = false;
@@ -380,7 +400,7 @@ const nextSong = async () => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        await load();
+        updateStatus.value = UpdateStatus.WAITING;
     } catch (e) {
         console.error("Next Song Error:", e);
     }
@@ -392,7 +412,7 @@ async function shuffleSongs() {
         const response = await fetch(`${shuffleSongUrl}?roomId=${roomId.value}`, { method: 'POST' });
         const result = await response.json();
         if (result.success) {
-            load(); // 重新加载列表
+            updateStatus.value = UpdateStatus.WAITING;
         }
     } catch (e) {
         console.error("Shuffle failed:", e);
@@ -528,7 +548,7 @@ const handleRefresh = async () => {
     isRefreshing.value = true;
 
     // 执行原有的 load 逻辑
-    await load();
+    updateStatus.value = UpdateStatus.WAITING;
 
     // 动画结束后重置状态
     setTimeout(() => {
@@ -575,14 +595,19 @@ let socket;
 // 初始化 WebSocket 连接
 const initWebSocket = () => {
     socket = new WebSocket(wsUrl);
-    console.log("WebSocket initialized");
+    console.log("WebSocket connecting...");
+
+    // 监听连接成功事件
+    socket.onopen = () => {
+        console.log("WebSocket connected");
+    };
 
     socket.onmessage = async (event) => {
         try {
             const data = JSON.parse(event.data);
             // 当服务端通知更新，且 Hash 与本地不一致时 load
             if (data.type === 'UPDATE' && data.hash !== lastHash.value) {
-                await load();
+                updateStatus.value = UpdateStatus.WAITING;
             }
         } catch (e) {
             console.error("WS Message Error:", e);
@@ -603,7 +628,7 @@ onMounted(() => {
     if (!nickname.value) {
         showNicknameModal.value = true;
     }
-    load(); // 首次进入拉取数据
+    updateStatus.value = UpdateStatus.WAITING; // 首次进入拉取数据
     initWebSocket();
 });
 
