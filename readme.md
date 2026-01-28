@@ -92,7 +92,8 @@ ktv-web-frontend:
 
 1. 前往[Release](https://github.com/StarFreedomX/ktv-song-web/releases)页面下载构建好的包
 2. 解压，进入解压后的目录
-3. 执行`pnpm install`
+3. 执行`pnpm install --prod`
+   > 可以使用`--frozen-lockfile`来锁定依赖版本
 4. 运行`pnpm start`
 
 ### 本地构建启动
@@ -105,9 +106,12 @@ cd ktv-song-web
 # 如果没有安装pnpm，运行下面这行
 # npm install -g pnpm
 
-pnpm install
+pnpm install # 可以使用`--frozen-lockfile`来锁定依赖版本
 
 pnpm build
+
+# 清理开发依赖
+pnpm prune --prod
 
 # 接下来可以进入frontend backend文件夹
 # 复制一份 .env 到 .env.local
@@ -123,7 +127,7 @@ pnpm start
 ```shell
 git clone https://github.com/StarFreedomX/ktv-song-web.git
 cd ktv-song-web
-pnpm install
+pnpm install # 可以使用`--frozen-lockfile`来锁定依赖版本
 pnpm dev
 ```
 
