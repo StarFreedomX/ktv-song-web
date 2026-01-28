@@ -50,13 +50,14 @@ export function initUtils(lastHash){
         return link;
     }
 
-    const handleAutoRecognize = (autoInput, form) => {
-        let raw = autoInput.value.trim();
+    const handleAutoRecognize = (text, form) => {
+        let raw = (text || "").trim();
         if (!raw) return;
 
         // 提取链接
         const urlMatch = raw.match(/https?:\/\/(?:[a-zA-Z0-9-]+\.)?(?:bilibili\.com|b23\.tv)\/[a-zA-Z0-9/._?=-]+/i);
-        if (urlMatch) form.value.url = urlMatch[0];
+
+        if (urlMatch) form.url = urlMatch[0];
 
         // 初始清理：只去掉链接，保留所有文字和括号
         let title = raw.replace(/https?:\/\/\S+/g, '').trim();
@@ -133,7 +134,7 @@ export function initUtils(lastHash){
 
         // 6. 清理残留在括号外的游离标签
         title = title.replace(blacklist, "");
-        form.value.title = title;
+        form.title = title;
     };
 
     const executeJump = (url, jumpMode) => {

@@ -69,7 +69,8 @@ const handleClose = () => {
 };
 
 const onAutoInput = (e) => {
-    emit('update:autoInput', e.target.value);
-    emit('auto-recognize'); // 触发父组件的解析逻辑
+    const value = e.target.value;
+    emit('update:autoInput', value);
+    emit('auto-recognize', value); // 触发父组件的解析逻辑
 };
 </script>

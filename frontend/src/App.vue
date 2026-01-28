@@ -161,11 +161,6 @@ const addFavoriteToQueue = async (fav) => {
     });
 };
 
-const openAddFavoriteModal = () => {
-    isAddingToFavorites.value = true;
-    showAddModal.value = true; // 复用原有的添加歌曲弹窗
-};
-
 const exportFavorites = () => {
     const dataStr = JSON.stringify(favorites.value, null, 2);
     const blob = new Blob([dataStr], { type: 'application/json' });
@@ -758,7 +753,7 @@ onUnmounted(() => {
         v-model:isAddingToFavorites="isAddingToFavorites"
         v-model:autoInput="autoInput"
         v-model:form="form"
-        @auto-recognize="handleAutoRecognize"
+        @auto-recognize="handleAutoRecognize($event, form)"
         @submit="handleAdd"
     />
 
