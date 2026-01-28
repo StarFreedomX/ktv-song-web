@@ -29,7 +29,7 @@
 import { computed } from 'vue';
 
 const props = defineProps({
-    modelValue: [String, Number],
+    modelValue: [String, Number, Boolean],
     title: String,
     description: String,
     options: {
@@ -47,6 +47,8 @@ const indicatorStyle = computed(() => {
 
     const activeIndex = props.options.findIndex(opt => opt.value === props.modelValue);
 
+    if(activeIndex === -1) return { opacity:0 };
+
     // 宽度百分比 = 100% / 选项个数
     const width = 100 / count;
 
@@ -54,7 +56,9 @@ const indicatorStyle = computed(() => {
     const x = activeIndex * 100;
 
     return {
-        width: `calc(${width}% - 2px)`,
+        // 由于父容器有p-1即4px的边距，所以滑块实际活动范围为(总宽度-8px)
+        // 所以每个滑块宽度为calc(总宽度/数量+8px/数量)
+        width: `calc(${width}% - ${8/count}px)`,
         transform: `translateX(${x}%)`
     };
 });
