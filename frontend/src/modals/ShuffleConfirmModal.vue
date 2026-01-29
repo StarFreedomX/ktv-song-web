@@ -1,4 +1,6 @@
 <script setup>
+import ComfirmButton from './components/ComfirmButton.vue';
+
 // 定义属性
 const props = defineProps({
     modelValue: Boolean // 控制显示隐藏
@@ -32,18 +34,22 @@ const handleConfirm = () => {
                 </div>
 
                 <div class="flex space-x-3">
-                    <button @click="$emit('update:modelValue', false)"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl">
+                    <ComfirmButton
+                        type="secondary"
+                        class="flex-1 !py-3 !rounded-xl"
+                        @click="$emit('update:modelValue', false)"
+                    >
                         取消
-                    </button>
-                    <button @click="handleConfirm"
-                            class="flex-1 py-3 bg-orange-500 text-white font-bold rounded-xl shadow-lg shadow-orange-200">
+                    </ComfirmButton>
+                    <ComfirmButton
+                        type="primary"
+                        class="flex-1 !py-3 !rounded-xl !bg-orange-500 !shadow-orange-200"
+                        @click="handleConfirm"
+                    >
                         立即打乱
-                    </button>
+                    </ComfirmButton>
                 </div>
             </div>
         </div>
     </transition>
 </template>
-
-

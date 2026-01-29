@@ -23,17 +23,22 @@
                        placeholder="输入昵称..."
                        autoFocus>
 
-                <button @click="handleSave"
-                        :disabled="!tempNickname?.trim()"
-                        class="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200 transition active:scale-95 disabled:opacity-50 disabled:active:scale-100">
+                <ComfirmButton
+                    type="primary"
+                    :disabled="!tempNickname?.trim()"
+                    class="w-full !shadow-indigo-200"
+                    @click="handleSave"
+                >
                     开始点歌
-                </button>
+                </ComfirmButton>
             </div>
         </div>
     </transition>
 </template>
 
 <script setup>
+import ComfirmButton from './components/ComfirmButton.vue';
+
 const props = defineProps({
     modelValue: Boolean, // showNicknameModal
     tempNickname: String,

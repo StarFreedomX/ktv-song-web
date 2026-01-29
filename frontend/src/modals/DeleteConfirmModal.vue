@@ -19,14 +19,20 @@
                 </div>
 
                 <div class="flex space-x-3">
-                    <button @click="$emit('update:modelValue', null)"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">
+                    <ComfirmButton
+                        type="secondary"
+                        class="flex-1 !py-3 !rounded-xl"
+                        @click="$emit('update:modelValue', null)"
+                    >
                         返回
-                    </button>
-                    <button @click="$emit('confirm')"
-                            class="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition">
+                    </ComfirmButton>
+                    <ComfirmButton
+                        type="primary"
+                        class="flex-1 !py-3 !rounded-xl !bg-red-500 !hover:bg-red-600 !shadow-none"
+                        @click="$emit('confirm')"
+                    >
                         确认移除
-                    </button>
+                    </ComfirmButton>
                 </div>
             </div>
         </div>
@@ -34,8 +40,10 @@
 </template>
 
 <script setup>
+import ComfirmButton from './components/ComfirmButton.vue';
+
 defineProps({
-    modelValue: Object // 接收整个 deletingSong 对象
+    modelValue: Object
 });
 
 defineEmits(['update:modelValue', 'confirm']);

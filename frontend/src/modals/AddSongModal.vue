@@ -32,14 +32,21 @@
                 </div>
 
                 <div class="flex gap-3 pt-2">
-                    <button @click="handleClose"
-                            class="flex-1 py-3 bg-slate-100 text-slate-500 font-bold rounded-xl transition">
+                    <ComfirmButton
+                        type="secondary"
+                        class="flex-1 !py-3 !rounded-xl"
+                        @click="handleClose"
+                    >
                         取消
-                    </button>
-                    <button @click="$emit('submit')"
-                            class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition">
+                    </ComfirmButton>
+
+                    <ComfirmButton
+                        type="primary"
+                        class="flex-1 !py-3 !rounded-xl !shadow-indigo-200"
+                        @click="$emit('submit')"
+                    >
                         {{ isAddingToFavorites ? '确认收藏' : '确认添加' }}
-                    </button>
+                    </ComfirmButton>
                 </div>
             </div>
         </div>
@@ -47,6 +54,8 @@
 </template>
 
 <script setup>
+import ComfirmButton from './components/ComfirmButton.vue';
+
 const props = defineProps({
     modelValue: Boolean,          // 控制显隐 (showAddModal)
     isAddingToFavorites: Boolean, // 模式切换

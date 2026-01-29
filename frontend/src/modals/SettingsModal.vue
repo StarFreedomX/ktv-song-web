@@ -1,10 +1,10 @@
 <script setup>
 import { reactive, watch } from 'vue';
-import SettingText from './SettingItems/SettingText.vue';
-import SettingSegment from './SettingItems/SettingSegment.vue';
-import SettingSwitch from './SettingItems/SettingSwitch.vue';
-import SettingCollapse from "./SettingItems/SettingCollapse.vue";
-import ComfirmButton from "./SettingItems/ComfirmButton.vue";
+import SettingText from './components/SettingText.vue';
+import SettingSegment from './components/SettingSegment.vue';
+import SettingSwitch from './components/SettingSwitch.vue';
+import SettingCollapse from "./components/SettingCollapse.vue";
+import ComfirmButton from "./components/ComfirmButton.vue";
 
 const props = defineProps({
     modelValue: Boolean,

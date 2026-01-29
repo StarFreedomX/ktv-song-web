@@ -22,14 +22,21 @@
                 </div>
 
                 <div class="flex space-x-3 pt-2">
-                    <button @click="$emit('update:modelValue', null)"
-                            class="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition">
+                    <ComfirmButton
+                        type="secondary"
+                        class="flex-1 !py-3 !rounded-xl"
+                        @click="$emit('update:modelValue', null)"
+                    >
                         取消
-                    </button>
-                    <button @click="handleSave"
-                            class="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-lg shadow-indigo-200 transition">
+                    </ComfirmButton>
+
+                    <ComfirmButton
+                        type="primary"
+                        class="flex-1 !py-3 !rounded-xl !shadow-indigo-200"
+                        @click="handleSave"
+                    >
                         保存修改
-                    </button>
+                    </ComfirmButton>
                 </div>
             </div>
         </div>
@@ -38,6 +45,7 @@
 
 <script setup>
 import { ref, watch } from 'vue';
+import ComfirmButton from './components/ComfirmButton.vue'; // 引入组件
 
 const props = defineProps({
     modelValue: Object, // 对应 editingSong

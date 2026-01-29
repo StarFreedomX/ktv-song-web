@@ -2,17 +2,17 @@
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import { initUtils } from "./utils";
 import { useRoute } from 'vue-router';
-import ShuffleConfirmModal from "./components/ShuffleConfirmModal.vue";
-import SettingsModal from "./components/SettingsModal.vue";
-import FavoritesModal from "./components/FavoritesModal.vue";
-import JumpConfirmModal from "./components/JumpConfirmModal.vue";
-import DeleteConfirmModal from "./components/DeleteConfirmModal.vue";
-import EditSongModal from "./components/EditSongModal.vue";
-import AddSongModal from "./components/AddSongModal.vue";
-import NicknameModal from "./components/NicknameModal.vue";
-import BottomNav from "./components/BottomNav.vue";
-import QueueList from "./components/QueueList.vue";
-import HistoryList from "./components/HistoryList.vue";
+import ShuffleConfirmModal from "./modals/ShuffleConfirmModal.vue";
+import SettingsModal from "./modals/SettingsModal.vue";
+import FavoritesModal from "./modals/FavoritesModal.vue";
+import JumpConfirmModal from "./modals/JumpConfirmModal.vue";
+import DeleteConfirmModal from "./modals/DeleteConfirmModal.vue";
+import EditSongModal from "./modals/EditSongModal.vue";
+import AddSongModal from "./modals/AddSongModal.vue";
+import NicknameModal from "./modals/NicknameModal.vue";
+import BottomNav from "./modals/BottomNav.vue";
+import QueueList from "./modals/QueueList.vue";
+import HistoryList from "./modals/HistoryList.vue";
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
