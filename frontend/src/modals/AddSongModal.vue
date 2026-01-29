@@ -4,9 +4,15 @@
              class="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
              @click.self="handleClose">
             <div class="modal-container bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl p-6 space-y-4">
-                <h3 class="text-xl font-black text-slate-800 px-2">
-                    {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
-                </h3>
+                <div class="flex items-center justify-between px-2">
+                    <h3 class="text-xl font-black text-slate-800">
+                        {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
+                    </h3>
+                    <button @click="handleClearAll"
+                            class="flex items-center gap-1.5 px-3 border-1 py-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all group">
+                        <span class="text-xs font-bold">清空输入</span>
+                    </button>
+                </div>
 
                 <div class="space-y-1">
                     <label class="text-[10px] font-bold text-indigo-400 ml-1 uppercase tracking-widest">
@@ -75,6 +81,11 @@ const emit = defineEmits([
 const handleClose = () => {
     emit('update:modelValue', false);
     emit('update:isAddingToFavorites', false);
+};
+
+const handleClearAll = () => {
+    emit('update:autoInput', '');
+    emit('update:form', { title: '', url: '' });
 };
 
 const onAutoInput = (e) => {
