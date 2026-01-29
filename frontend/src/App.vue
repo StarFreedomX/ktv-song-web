@@ -14,6 +14,19 @@ import BottomNav from "./components/BottomNav.vue";
 import QueueList from "./components/QueueList.vue";
 import HistoryList from "./components/HistoryList.vue";
 
+// 扩展详细状态定义
+const SyncStatus = Object.freeze({
+    // 连接层
+    WS_CONNECTING: { label: 'WS 连接中', color: 'text-yellow-500', dot: 'bg-yellow-500 animate-pulse' },
+    WS_ONLINE: { label: 'WS 在线', color: 'text-green-500', dot: 'bg-green-500' },
+    POLLING_IDLE: { label: 'HTTP 待机', color: 'text-blue-500', dot: 'bg-blue-400' },
+    OFFLINE: { label: '已断开', color: 'text-red-500', dot: 'bg-red-500' },
+    // 动作层
+    FETCHING: { label: '同步中...', color: 'text-indigo-500', dot: 'bg-indigo-500 animate-spin' },
+    SUCCESS: { label: '拉取成功', color: 'text-emerald-500', dot: 'bg-emerald-500' },
+    FAILED: { label: '同步失败', color: 'text-rose-600', dot: 'bg-rose-600' }
+});
+
 const UpdateStatus = Object.freeze({
     IDLE: 0,
     WAITING: 1,
@@ -60,6 +73,7 @@ const showNicknameModal = ref(false);
 const showShuffleConfirm = ref(false);
 const showSettings = ref(false);
 const showAddModal = ref(false);
+const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储
 /** @type {import('vue').Ref<Song[]>} */
@@ -89,6 +103,20 @@ const {
     getLISIndices
 } = initUtils(lastHash);
 
+// 辅助函数：显示瞬时状态并恢复
+const showTransientStatus = (status, delay = 1000) => {
+    currentSync.value = status;
+    setTimeout(() => {
+        // 根据当前模式恢复基础状态
+        if (wsMode.value) {
+            currentSync.value = (socket && socket.readyState === WebSocket.OPEN)
+                ? SyncStatus.WS_ONLINE
+                : SyncStatus.WS_CONNECTING;
+        } else {
+            currentSync.value = SyncStatus.POLLING_IDLE;
+        }
+    }, delay);
+};
 
 //监听器
 // 逻辑拆分：待唱列表和已唱列表
@@ -136,8 +164,17 @@ watch([allowUpdate, updateStatus], ([canUpdate, status]) => {
 
 async function performUpdate() {
     updateStatus.value = UpdateStatus.FETCHING;
-    await load();
-    updateStatus.value = UpdateStatus.IDLE;
+    currentSync.value = SyncStatus.FETCHING; // 切换到拉取中
+
+    try {
+        await load();
+        updateStatus.value = UpdateStatus.IDLE;
+        showTransientStatus(SyncStatus.SUCCESS); // 成功闪烁
+    } catch (e) {
+        console.error(e);
+        updateStatus.value = UpdateStatus.IDLE;
+        showTransientStatus(SyncStatus.FAILED); // 失败闪烁
+    }
 }
 
 // 收藏相关
@@ -611,11 +648,11 @@ const stopSyncDrivers = () => {
 // WebSocket
 const initWebSocket = () => {
     socket = new WebSocket(wsUrl);
+    currentSync.value = SyncStatus.WS_CONNECTING;
     console.log("WebSocket connecting...");
 
-    // 监听连接成功事件
     socket.onopen = () => {
-        console.log("WebSocket connected");
+        currentSync.value = SyncStatus.WS_ONLINE;
     };
 
     socket.onmessage = async (event) => {
@@ -631,11 +668,13 @@ const initWebSocket = () => {
     };
 
     socket.onclose = () => {
+        currentSync.value = SyncStatus.OFFLINE;
         console.warn('WS 连接已断开，3秒后尝试重连...');
-        setTimeout(initWebSocket, 3000); // 重连
+        reconnectTimer = setTimeout(initWebSocket, 3000);
     };
 
     socket.onerror = (err) => {
+        showTransientStatus(SyncStatus.FAILED);
         console.error('WS 发生错误:', err);
     };
 };
@@ -643,6 +682,7 @@ const initWebSocket = () => {
 // HTTP轮询
 const initPolling = () => {
     if (pollingTimer) return;
+    currentSync.value = SyncStatus.POLLING_IDLE;
     pollingTimer = setInterval(() => {
         // 轮询也只是改变状态，触发你的状态机
         updateStatus.value = UpdateStatus.WAITING;
@@ -711,8 +751,22 @@ onUnmounted(() => {
                     </svg>
                 </button>
             </div>
-            <div class="text-[10px] text-slate-300 font-mono bg-slate-100 px-2 py-1 rounded">
-                HASH: {{ lastHash.slice(0, 6) }}
+
+            <div class="flex flex-col items-end gap-1">
+                <div :class="['px-2 py-0.5 rounded-lg border flex items-center gap-1.5 transition-all shadow-sm',
+                currentSync === SyncStatus.SUCCESS ? 'bg-emerald-50 border-emerald-200' :
+                currentSync === SyncStatus.FAILED ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200']">
+
+                <span class="relative flex h-1.5 w-1.5">
+                    <span v-if="currentSync.dot.includes('animate')"
+                          :class="['absolute inline-flex h-full w-full rounded-full opacity-75', currentSync.dot]"></span>
+                    <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', currentSync.dot]"></span>
+                </span>
+
+                    <span :class="['text-[9px] font-black uppercase tracking-tighter', currentSync.color]">
+                    {{ currentSync.label }}
+                </span>
+                </div>
             </div>
         </div>
     </header>
