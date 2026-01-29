@@ -890,8 +890,7 @@ onUnmounted(() => {
         v-model:jumpMode="jumpMode"
         v-model:wsMode="wsMode"
         v-model:autoJump="autoJump"
-        :nickname="nickname"
-        @edit-nickname="tempNickname = nickname; showNicknameModal = true"
+        v-model:nickname="nickname"
     />
 
     <ShuffleConfirmModal
