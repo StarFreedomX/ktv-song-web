@@ -1,3 +1,4 @@
+<!-- modals/components/SettingModal.vue -->
 <script setup>
 import { reactive, watch } from 'vue';
 import SettingText from './components/SettingText.vue';
@@ -8,38 +9,28 @@ import ComfirmButton from "./components/ComfirmButton.vue";
 
 const props = defineProps({
     modelValue: Boolean,
-    nickname: String,
-    jumpMode: String,
-    wsMode: Boolean,
-    autoJump: Boolean
+    cfg: Object
 });
 
 const emit = defineEmits([
     'update:modelValue',
-    'update:jumpMode',
-    'update:wsMode',
-    'update:autoJump',
-    'update:nickname'
+    'update:cfg'
 ]);
-// SettingsModal.vue 内部
+
+// 临时对象
 const draft = reactive({});
 
-// 弹窗打开时，全自动把 props 塞进 draft
+// 监听弹窗打开 同步对象属性
 watch(() => props.modelValue, (isOpen) => {
-    if (isOpen) {
-        Object.keys(props).forEach(key => {
-            draft[key] = props[key];
-        });
+    if (isOpen && props.cfg) {
+        Object.assign(draft, props.cfg);
     }
 });
 
-// 保存按钮：把 draft 里的东西全量 emit 掉
+// 保存按钮：把草稿对象整体 emit 掉
 const handleConfirm = () => {
-    Object.keys(draft).forEach(key => {
-        if (draft[key] !== props[key]) {
-            emit(`update:${key}`, draft[key]);
-        }
-    });
+    // 触发父组件更新 cfg 对象
+    emit('update:cfg', { ...draft });
     emit('update:modelValue', false);
 };
 

@@ -45,21 +45,26 @@ if (roomId.value) {
 // 字符串常量
 const EMPTY_HASH = "EMPTY_LIST_HASH";
 
-// 基础设定
-const lastHash = ref(EMPTY_HASH);
-const nickname = ref(localStorage.getItem('ktv_nickname') || '');
-const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
-const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
-const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
-const wsMode = ref(localStorage.getItem('ktv_ws_mode') !== 'false');
+// 尝试读取统一存放的配置
+const localData = JSON.parse(localStorage.getItem('ktv_config') || '{}');
+
+// 初始化对象（如果统一配置里没有，就去拿以前分开存的旧 Key）
+const cfg = ref({
+    nickname: localData.nickname ?? (localStorage.getItem('ktv_nickname') || ''),
+    jumpMode: localData.jumpMode ?? (localStorage.getItem('ktv_jump_mode') || 'web'),
+    autoJump: localData.autoJump ?? (localStorage.getItem('ktv_auto_jump') === 'true'),
+    hostMode: localData.hostMode ?? (localStorage.getItem('ktv_host_mode') === 'true'),
+    wsMode: localData.wsMode ?? (localStorage.getItem('ktv_ws_mode') !== 'false')
+});
 
 // api接口
+const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
 const shuffleSongUrl = "api/shuffle"
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value}&nickname=${encodeURIComponent(nickname.value || '')}`;
+const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value}&nickname=${encodeURIComponent(cfg.value.nickname || '')}`;
 
 // 控制页面元素的变量
 /** @type {import('vue').Ref<String>} */
@@ -108,7 +113,7 @@ const showTransientStatus = (status, delay = 1000) => {
     currentSync.value = status;
     setTimeout(() => {
         // 根据当前模式恢复基础状态
-        if (wsMode.value) {
+        if (cfg.value.wsMode) {
             currentSync.value = (socket && socket.readyState === WebSocket.OPEN)
                 ? SyncStatus.WS_ONLINE
                 : SyncStatus.WS_CONNECTING;
@@ -134,17 +139,14 @@ const filteredFavorites = computed(() => {
     const query = favSearchQuery.value.toLowerCase();
     return favorites.value.filter(fav => fav.title.toLowerCase().includes(query) || fav.url.toLowerCase().includes(query)); //
 });
-watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
-watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
 watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
-watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
-watch(wsMode, (val) => localStorage.setItem('ktv_ws_mode', val));
+watch(cfg, (newVal) => localStorage.setItem('ktv_config', JSON.stringify(newVal)), { deep: true });
 watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
 
 // 监听正在播放歌曲的变化
 watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
     // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
-    if (hostMode.value && newSong && (!oldSong || newSong.id !== oldSong.id)) {
+    if (cfg.value.hostMode && newSong && (!oldSong || newSong.id !== oldSong.id)) {
         console.log('主机模式：检测到切歌，正在自动跳转...', newSong.title);
 
         if (newSong.url) {
@@ -332,7 +334,7 @@ const add = async () => {
         id: 's-' + Math.random().toString(36).slice(2, 11),
         title: form.value.title,
         url: rawUrl,
-        addedBy: nickname.value,
+        addedBy: cfg.value.nickname,
         isNew: true
     };
 
@@ -545,7 +547,7 @@ const goToLink = (song) => {
         pendingJumpUrl.value = /^https?:\/\//i.test(song.url) ? song.url : `https://${song.url}`;
         jumpSongTitle.value = song.title;
 
-        if (autoJump.value) {
+        if (cfg.value.autoJump) {
             confirmJump(); // 直接执行跳转
         }
     }
@@ -554,7 +556,7 @@ const goToLink = (song) => {
 const confirmJump = () => {
     if (pendingJumpUrl.value) {
         const url = pendingJumpUrl.value;
-        executeJump(url, jumpMode);
+        executeJump(url, cfg.value.jumpMode);
         pendingJumpUrl.value = null;
     }
 };
@@ -619,8 +621,8 @@ const saveEdit = async (updatedData) => {
 
 const saveNickname = () => {
     if (tempNickname.value.trim()) {
-        nickname.value = tempNickname.value.trim();
-        localStorage.setItem('ktv_nickname', nickname.value);
+        cfg.value.nickname = tempNickname.value.trim();
+        tempNickname.value = null;
         showNicknameModal.value = false;
     }
 };
@@ -691,7 +693,7 @@ const initPolling = () => {
 };
 
 // 监听模式变化，切换驱动源
-watch(() => wsMode.value, (isWS) => {
+watch(() => cfg.value.wsMode, (isWS) => {
     stopSyncDrivers();
     if (isWS) {
         initWebSocket();
@@ -701,13 +703,13 @@ watch(() => wsMode.value, (isWS) => {
 });
 
 onMounted(() => {
-    if (!nickname.value) showNicknameModal.value = true;
+    if (!cfg.value.nickname) showNicknameModal.value = true;
 
     // 首次进入：触发状态机拉取数据
     updateStatus.value = UpdateStatus.WAITING;
 
     // 根据模式启动对应的驱动
-    if (wsMode.value) {
+    if (cfg.value.wsMode) {
         initWebSocket();
     } else {
         initPolling();
@@ -729,11 +731,11 @@ onUnmounted(() => {
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
-                <button @click="hostMode = !hostMode"
+                <button @click="cfg.hostMode = !cfg.hostMode"
                         :class="['px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5',
-                     hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
-                    <span :class="['w-1.5 h-1.5 rounded-full', hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
-                    主机模式 {{ hostMode ? 'ON' : 'OFF' }}
+                     cfg.hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
+                    <span :class="['w-1.5 h-1.5 rounded-full', cfg.hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
+                    主机模式 {{ cfg.hostMode ? 'ON' : 'OFF' }}
                 </button>
                 <button @click="showFavoritesModal = true"
                         class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-indigo-600 transition flex items-center gap-1"
@@ -842,7 +844,7 @@ onUnmounted(() => {
     <NicknameModal
         v-model="showNicknameModal"
         v-model:tempNickname="tempNickname"
-        :has-nickname="!!nickname"
+        :has-nickname="!!cfg.nickname"
         @save="saveNickname"
     />
 
@@ -887,10 +889,7 @@ onUnmounted(() => {
 
     <SettingsModal
         v-model="showSettings"
-        v-model:jumpMode="jumpMode"
-        v-model:wsMode="wsMode"
-        v-model:autoJump="autoJump"
-        v-model:nickname="nickname"
+        v-model:cfg="cfg"
     />
 
     <ShuffleConfirmModal

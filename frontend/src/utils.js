@@ -150,7 +150,7 @@ export function initUtils(lastHash){
             pageIdx = urlObj.searchParams.get('page');
         }
 
-        if (jumpMode.value === 'app') {
+        if (jumpMode === 'app') {
             // --- App ---
             // 如果后端已经处理好了协议，直接跳转即可
             if (url.startsWith('bilibili://')) {
