@@ -38,6 +38,7 @@ const nickname = ref(localStorage.getItem('ktv_nickname') || '');
 const jumpMode = ref(localStorage.getItem('ktv_jump_mode') || 'web');
 const autoJump = ref(localStorage.getItem('ktv_auto_jump') === 'true');
 const hostMode = ref(localStorage.getItem('ktv_host_mode') === 'true');
+const wsMode = ref(localStorage.getItem('ktv_ws_mode') !== 'false');
 
 // api接口
 const commitApiUrl = "api/songOperation"
@@ -109,6 +110,7 @@ watch(jumpMode, (val) => localStorage.setItem('ktv_jump_mode', val));
 watch(autoJump, (val) => localStorage.setItem('ktv_auto_jump', val));
 watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
 watch(hostMode, (val) => localStorage.setItem('ktv_host_mode', val));
+watch(wsMode, (val) => localStorage.setItem('ktv_ws_mode', val));
 watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
 
 // 监听正在播放歌曲的变化
@@ -586,8 +588,27 @@ const saveNickname = () => {
     }
 };
 
-let socket;
-// 初始化 WebSocket 连接
+let socket = null;
+let pollingTimer = null;
+let reconnectTimer = null;
+
+// 停止所有同步
+const stopSyncDrivers = () => {
+    if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+        console.log("WebSocket disconnected")
+    }
+    if (pollingTimer) {
+        clearInterval(pollingTimer);
+        pollingTimer = null;
+        console.log("Interval HTTP disabled")
+    }
+};
+
+// WebSocket
 const initWebSocket = () => {
     socket = new WebSocket(wsUrl);
     console.log("WebSocket connecting...");
@@ -619,19 +640,42 @@ const initWebSocket = () => {
     };
 };
 
-onMounted(() => {
-    if (!nickname.value) {
-        showNicknameModal.value = true;
+// HTTP轮询
+const initPolling = () => {
+    if (pollingTimer) return;
+    pollingTimer = setInterval(() => {
+        // 轮询也只是改变状态，触发你的状态机
+        updateStatus.value = UpdateStatus.WAITING;
+    }, 5000);
+    console.log("Interval HTTP enabled")
+};
+
+// 监听模式变化，切换驱动源
+watch(() => wsMode.value, (isWS) => {
+    stopSyncDrivers();
+    if (isWS) {
+        initWebSocket();
+    } else {
+        initPolling();
     }
-    updateStatus.value = UpdateStatus.WAITING; // 首次进入拉取数据
-    initWebSocket();
+});
+
+onMounted(() => {
+    if (!nickname.value) showNicknameModal.value = true;
+
+    // 首次进入：触发状态机拉取数据
+    updateStatus.value = UpdateStatus.WAITING;
+
+    // 根据模式启动对应的驱动
+    if (wsMode.value) {
+        initWebSocket();
+    } else {
+        initPolling();
+    }
 });
 
 onUnmounted(() => {
-    // 组件卸载时关闭连接
-    if (socket) {
-        socket.close();
-    }
+    stopSyncDrivers();
 });
 
 </script>
@@ -790,6 +834,7 @@ onUnmounted(() => {
     <SettingsModal
         v-model="showSettings"
         v-model:jumpMode="jumpMode"
+        v-model:wsMode="wsMode"
         v-model:autoJump="autoJump"
         :nickname="nickname"
         @edit-nickname="tempNickname = nickname; showNicknameModal = true"
