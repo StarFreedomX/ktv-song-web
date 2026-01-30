@@ -61,7 +61,6 @@ const cfg = ref({
 const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
 const loadSongListUrl = "api/songListInfo"
-const nextSongUrl = "api/nextSong"
 const shuffleSongUrl = "api/shuffle"
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value}&nickname=${encodeURIComponent(cfg.value.nickname || '')}`;
@@ -424,22 +423,22 @@ const undoSung = async (song) => {
     });
 };
 
-// TODO 整合到songOperation
 const nextSong = async () => {
-    try {
-        const res = await fetch(`${nextSongUrl}?roomId=${roomId.value}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-                idArrayHash: lastHash.value
-            })
-        }).then(r => r.json());
+    const idx = songs.value.findIndex(s => !s.state || s.state === 'queued');
+    if (idx === -1) return;
+    const song = songs.value[idx];
+    song.isDeleting = true;
 
-        if (res.code === 'REJECT') {
-            lastHash.value = EMPTY_HASH;
-        }
-        updateStatus.value = UpdateStatus.WAITING;
-    } catch (e) {
-        console.error("Next Song Error:", e);
-    }
+    setTimeout(async () => {
+        const currentIdx = songs.value.findIndex(s => s.id === song.id);
+        if (currentIdx === -1) return;
+        songs.value.splice(currentIdx, 1);
+        const updatedSong = { ...song, state: 'sung' };
+        delete updatedSong.isDeleting;
+        songs.value.push(updatedSong);
+        const success = await commitOp({ song: updatedSong, toIndex: songs.value.length - 1 });
+        if (!success) updateStatus.value = UpdateStatus.WAITING;
+    }, 400); // 与 slide-out-item 动画时长一致
 };
 
 async function shuffleSongs() {
