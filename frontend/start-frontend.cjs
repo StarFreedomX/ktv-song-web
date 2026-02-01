@@ -17,11 +17,16 @@ if (isNaN(port)) {
 
 console.log('env backend url:', backendUrl)
 const apiUrl = new URL('/api', backendUrl);
-app.use('/api', createProxyMiddleware({
+const apiProxy = createProxyMiddleware({
     target: apiUrl.href,
+    changeOrigin: true
+});
+const wsApiProxy = createProxyMiddleware({
+    target: backendUrl,
     changeOrigin: true,
-    ws: true
-}));
+    ws: true,
+});
+app.use('/api', apiProxy);
 
 app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -31,6 +36,7 @@ app.use((req, res) => {
 const server = app.listen(port, host, () => {
     console.log(`frontend server running at: http://${host}:${port}`);
 });
+server.on('upgrade', wsApiProxy);
 const shutdown = (signal) => {
     console.log(`Received ${signal}, shutting down...`);
     server.close(() => {

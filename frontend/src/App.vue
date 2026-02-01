@@ -655,6 +655,7 @@ const initWebSocket = () => {
 
     socket.onopen = () => {
         currentSync.value = SyncStatus.WS_ONLINE;
+        console.log("WebSocket connected");
     };
 
     socket.onmessage = async (event) => {
