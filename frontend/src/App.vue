@@ -440,10 +440,14 @@ const undoSung = async (song) => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        updateStatus.value = UpdateStatus.WAITING;
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     } catch (e) {
         console.error('Undo Sung Error:', e);
-        updateStatus.value = UpdateStatus.WAITING;
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     }
 };
 
@@ -460,9 +464,15 @@ const nextSong = async () => {
             lastHash.value = EMPTY_HASH;
         }
         // 若成功或拒绝都触发拉取以同步最新状态
-        updateStatus.value = UpdateStatus.WAITING;
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+        
     } catch (e) {
         console.error("Next Song Error:", e);
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     }
 };
 
@@ -477,10 +487,14 @@ const prevSong = async () => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        updateStatus.value = UpdateStatus.WAITING;
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     } catch (e) {
         console.error("Prev Song Error:", e);
-        updateStatus.value = UpdateStatus.WAITING;
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     }
 };
 
@@ -521,6 +535,8 @@ const load = async () => {
                 lastHash.value = res.hash || EMPTY_HASH;
                 return;
             }
+
+            lastHash.value = res.hash;
 
             // 计算 ID 映射（仅基于 queued）
             const oldIdMap = new Map();
@@ -570,8 +586,6 @@ const load = async () => {
                         if (s.isNew) s.isNewActive = true;
                     });
                 }, 10);
-
-                lastHash.value = res.hash;
 
                 // 清理状态
                 setTimeout(() => {
@@ -707,9 +721,9 @@ const initWebSocket = () => {
             const data = JSON.parse(event.data);
             // 当服务端通知更新，且 Hash 与本地不一致时 load
             if (data.type === 'UPDATE' && data.hash !== lastHash.value) {
-                console.log("Received UPDATE notification with different hash:", data.hash, lastHash.value);
-                
-                updateStatus.value = UpdateStatus.WAITING;
+                if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+                    updateStatus.value = UpdateStatus.WAITING;
+                }
             }
         } catch (e) {
             console.error("WS Message Error:", e);
