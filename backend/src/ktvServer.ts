@@ -8,15 +8,13 @@ import { Storage } from "@/storage";
 import { getHash, resolveBilibiliData, songListTools, songOperation} from "@/utils";
 import { DATABASE_NAME, IdentifiedWebSocket, OpLog, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
-export function runKTVServer(redisUrl?: string) {
+export function runKTVServer(storage: Storage) {
     const app = websockify(new Koa());
     const router = new Router();
     app.use(bodyParser());
 
     const DEFAULT_CACHE_DATA_EXPIRE_TIME = 24 * 60 * 60 * 1000;
     const DEFAULT_CACHE_OP_EXPIRE_TIME = 5 * 60 * 1000;
-
-    const storage = new Storage(redisUrl);
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
@@ -148,7 +146,7 @@ export function runKTVServer(redisUrl?: string) {
 
         const currentSongLists = roomSongsCache[roomId];
         const currentQueue = currentSongLists.queued;
-        
+
         if (!currentQueue?.length) {
             // 队列为空：如果有正在唱的歌，把它放到已唱（避免重复）并清空 singing
             if (currentSongLists.singing) {
@@ -165,7 +163,7 @@ export function runKTVServer(redisUrl?: string) {
             }
             return koaCtx.body = { success: false, msg: '队列中没有待唱歌曲' };
         }
-        
+
         // 把他从待唱列表中删除
         const toIndex = -1;
 

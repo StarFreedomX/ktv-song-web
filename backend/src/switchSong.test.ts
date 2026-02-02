@@ -1,15 +1,24 @@
 import request from 'supertest';
 import { runKTVServer } from '@/ktvServer';
+import { Storage } from "@/storage";
 
 let server: any;
+let storage: Storage;
 
-beforeAll(() => {
-    const app = runKTVServer(undefined);
+beforeAll(async () => {
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    storage = new Storage(redisUrl);
+    const app = runKTVServer(storage);
     server = app.listen();
 });
 
-afterAll((done) => {
-    server.close(done);
+afterAll(async () => {
+    if (storage) {
+        await storage.close();
+    }
+    if (server) {
+        await new Promise((resolve) => server.close(resolve));
+    }
 });
 
 async function getList(roomId: string) {
@@ -68,7 +77,7 @@ describe('SwitchSong next/prev flows', () => {
         // next -> B becomes singing, A moves to sung
         res = await next(room, hash);
         expect(res.body.success).toBe(true);
-        hash = res.body.hash;
+        //hash = res.body.hash;
         list = await getList(room);
         expect(list.list.singing.id).toBe('B');
         expect(list.list.sung.map((s: any) => s.id)).toEqual(['A']);
