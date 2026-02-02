@@ -1,7 +1,8 @@
 import axios from "axios";
-import { OpLog, Song } from "@/types";
+import { DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
 import ktvLogger from "@/logger";
 import * as crypto from 'crypto';
+import { Storage } from "@/storage";
 
 /**
  * 解析 B23.TV 短链接并提取 BV 号
@@ -318,13 +319,39 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 }
 
 // 生成哈希工具函数
-function getHash(songs: Song[]) {
-    if (!songs || songs.length === 0) return "EMPTY_LIST_HASH"; // 给空列表一个固定标识
-    const str = songs.map(s => `${s.id}:${s.title}:${s.url}:${s.state || 'queued'}:${s.addedBy || ''}`).join('|');
+function getHash(songLists: SongLists) {
+    if (songListTools.isEmpty(songLists)) return "EMPTY_LIST_HASH"; // 给空列表一个固定标识
+    const str = songListTools.songListToStr(songLists);
     ktvLogger.debug('hash src:', str)
     const hashValue = crypto.createHash('sha256').update(str).digest('hex');
     ktvLogger.debug('hash value:', hashValue);
     return hashValue;
 }
 
-export { resolveBilibiliData, songOperation, getHash };
+const songListTools = {
+    isEmpty(songLists: SongLists): boolean {
+        return songLists && (songLists.queued.length > 0 || !!songLists.singing || songLists.sung.length > 0);
+    },
+    songToStr: (s: Song) => `[${s.id}|${s.title}|${s.url}|${s.addedBy || ''}]`,
+    songListToStr: (songLists: SongLists) => [
+        'q:', songLists.queued.map(songListTools.songToStr).join(','),
+        'i:', songLists.singing ? songListTools.songToStr(songLists.singing) : 'null',
+        's:', songLists.sung.map(songListTools.songToStr).join(',')
+    ].join(';'),
+    initSongLists: async (storage: Storage, roomId: string): Promise<SongLists>=> {
+        const storageSongLists = (await storage.get<SongLists>(DATABASE_NAME, roomId) || songListTools.getEmptySongLists())
+        return {
+            queued: storageSongLists.queued || [],
+            singing: storageSongLists.singing || null,
+            sung: storageSongLists.sung || [],
+        }
+    },
+    // 不能使用常量，因为对象是地址传递
+    getEmptySongLists: (): SongLists => ({
+        queued: [],
+        singing: null,
+        sung: []
+    })
+}
+
+export { resolveBilibiliData, songOperation, getHash, songListTools };
