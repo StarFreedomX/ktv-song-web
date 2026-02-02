@@ -26,7 +26,7 @@ export function runKTVServer(storage: Storage) {
     const roomSongsCache: Record<string, SongLists> = {}
 
     // 检测并清理缓存
-    setInterval(() => {
+    const cacheCleanupTimer = setInterval(() => {
         const now = Date.now();
         for (const roomId in roomOpCache) {
             roomOpCache[roomId] = roomOpCache[roomId].filter(log => now - log.timestamp < CACHE_OP_EXPIRE_TIME);
@@ -36,6 +36,10 @@ export function runKTVServer(storage: Storage) {
             }
         }
     }, CACHE_OP_EXPIRE_TIME);
+
+    (app as any).closeAll = () => {
+        clearInterval(cacheCleanupTimer);
+    };
 
     // 存储房间 ID 与客户端集合的映射
     const roomClients = new Map<string, Set<IdentifiedWebSocket>>();
@@ -528,6 +532,11 @@ export function runKTVServer(storage: Storage) {
     app.use(router.routes()).use(router.allowedMethods());
 
     // 返回 app
-    return app;
+    return {
+        app,
+        close: () => {
+            clearInterval(cacheCleanupTimer);
+        }
+    };
 }
 

@@ -3,18 +3,23 @@ import { runKTVServer } from '@/ktvServer';
 import { Storage } from "@/storage";
 
 let server: any;
+let KTVServer: any;
 let storage: Storage;
 
 beforeAll(async () => {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
     storage = new Storage(redisUrl);
-    const app = runKTVServer(storage);
-    server = app.listen();
+    KTVServer = runKTVServer(storage);
+    const koaApp = KTVServer.app;
+    server = koaApp.listen();
 });
 
 afterAll(async () => {
     if (storage) {
-        await storage.close();
+        storage.close();
+    }
+    if (KTVServer) {
+        KTVServer.close();
     }
     if (server) {
         await new Promise((resolve) => server.close(resolve));
