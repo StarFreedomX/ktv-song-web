@@ -330,7 +330,7 @@ function getHash(songLists: SongLists) {
 
 const songListTools = {
     isEmpty(songLists: SongLists): boolean {
-        return songLists && (songLists.queued.length > 0 || !!songLists.singing || songLists.sung.length > 0);
+        return !songLists || (songLists.queued.length === 0 && !songLists.singing && songLists.sung.length === 0);
     },
     songToStr: (s: Song) => `[${s.id}|${s.title}|${s.url}|${s.addedBy || ''}]`,
     songListToStr: (songLists: SongLists) => [
