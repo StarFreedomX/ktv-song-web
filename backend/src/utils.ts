@@ -332,7 +332,7 @@ const songListTools = {
     isEmpty(songLists: SongLists): boolean {
         return !songLists || (songLists.queued.length === 0 && !songLists.singing && songLists.sung.length === 0);
     },
-    songToStr: (s: Song) => `[${s.id}|${s.title}|${s.url}|${s.addedBy || ''}]`,
+    songToStr: (s: Song) => `<${encodeURIComponent(s.id)}&${encodeURIComponent(s.title)}&${encodeURIComponent(s.url)}&${encodeURIComponent(s.addedBy || '')}>`,
     songListToStr: (songLists: SongLists) => [
         'q:', songLists.queued.map(songListTools.songToStr).join(','),
         'i:', songLists.singing ? songListTools.songToStr(songLists.singing) : 'null',

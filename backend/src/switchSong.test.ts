@@ -121,6 +121,35 @@ describe('SwitchSong next/prev flows', () => {
         expect(list.list.sung.map((s: any) => s.id)).toEqual([]);
     });
 
+    test('undoSung moves sung -> queued head', async () => {
+        const room = `r-${Date.now()}-undo`;
+        let list = await getList(room);
+        let hash = list.hash;
+
+        // add A, B
+        let res = await op(room, { idArrayHash: hash, song: createSong('A'), toIndex: 0 }); hash = res.body.hash;
+        res = await op(room, { idArrayHash: hash, song: createSong('B'), toIndex: 1 }); hash = res.body.hash;
+
+        // next -> A singing
+        res = await next(room, hash); hash = res.body.hash;
+        // next -> B singing, A to sung
+        res = await next(room, hash); hash = res.body.hash;
+
+        list = await getList(room);
+        expect(list.list.sung.map((s: any) => s.id)).toEqual(['A']);
+
+        // undo A
+        res = await request(server)
+            .post(`/api/undoSung?roomId=${room}`)
+            .send({ idArrayHash: hash, songId: 'A' })
+            .set('Content-Type', 'application/json');
+
+        expect(res.body.success).toBe(true);
+        list = await getList(room);
+        expect(list.list.queued[0].id).toBe('A');
+        expect(list.list.sung.map((s: any) => s.id)).toEqual([]);
+    });
+
     test('prevSong when sung empty and singing exists moves singing -> queued', async () => {
         const room = `r-${Date.now()}-4`;
         let list = await getList(room);

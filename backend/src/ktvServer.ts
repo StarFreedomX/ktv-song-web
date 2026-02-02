@@ -330,6 +330,86 @@ export function runKTVServer(redisUrl?: string) {
         }
     });
 
+    // 把已唱歌曲撤回到待唱顶部
+    router.post('/api/undoSung', async (koaCtx) => {
+        const { roomId: roomIds } = koaCtx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const { idArrayHash, songId } = koaCtx.request.body as { idArrayHash: string, songId?: string };
+        ktvLogger.debug('undoSung: ', roomId, idArrayHash, songId)
+
+        if (!roomSongsCache[roomId])
+            roomSongsCache[roomId] = await songListTools.initSongLists(storage, roomId);
+
+        const currentSongLists = roomSongsCache[roomId];
+        const currentQueue = currentSongLists.queued;
+
+        const serverHash = getHash(currentSongLists);
+        const nowIdArray = currentQueue.map(s => s.id);
+        const logs = roomOpCache[roomId] || [];
+        const latest = idArrayHash === serverHash;
+        let hitIdx = -1;
+        if (!latest) {
+            for (let i = logs.length - 1; i >= 0; i--) {
+                if (logs[i].baseHash === idArrayHash) {
+                    hitIdx = i;
+                    break;
+                }
+            }
+            if (hitIdx === -1) return koaCtx.body = { success: false, code: 'REJECT' };
+        }
+
+        const baseIdArray = latest ? nowIdArray : [...logs[hitIdx].baseIdArray];
+        const laterOps = latest ? [] : [...logs.slice(hitIdx)];
+
+        // 找到目标已唱歌曲
+        let targetSong = songId ? currentSongLists.sung.find(s => s.id === songId) : undefined;
+        // 如果未指定 songId，则默认取最后一首已唱
+        if (!targetSong && currentSongLists.sung.length > 0) {
+            targetSong = currentSongLists.sung[currentSongLists.sung.length - 1];
+        }
+
+        if (!targetSong) return koaCtx.body = { success: false, msg: '未找到已唱歌曲' };
+
+        // 如果已在队列中，则直接从 sung 中移除并返回
+        if (currentQueue.some(s => s.id === targetSong.id)) {
+            const idx = currentSongLists.sung.findIndex(s => s.id === targetSong.id);
+            if (idx !== -1) currentSongLists.sung.splice(idx, 1);
+            const finalHash = getHash(roomSongsCache[roomId]);
+            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            koaCtx.body = { success: true, hash: finalHash };
+            notifyUpdate(roomId, finalHash);
+            return;
+        }
+
+        const currentOp: OpLog = {
+            baseIdArray: baseIdArray,
+            baseHash: idArrayHash,
+            song: targetSong,
+            toIndex: 0,
+            timestamp: Date.now()
+        };
+
+        try {
+            const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, laterOps, currentOp);
+            logs.push(currentOp);
+            if (logs.length > 50) logs.shift();
+            roomOpCache[roomId] = logs;
+            roomSongsCache[roomId].queued = finalQueuedSongs;
+
+            // 从 sung 中移除
+            const lastIdx = currentSongLists.sung.findIndex(s => s.id === targetSong.id);
+            if (lastIdx !== -1) currentSongLists.sung.splice(lastIdx, 1);
+
+            const finalHash = getHash(roomSongsCache[roomId]);
+            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            koaCtx.body = { success: true, hash: finalHash, song: targetSong };
+            notifyUpdate(roomId, finalHash)
+        } catch (e) {
+            ktvLogger.debug('REJECT')
+            koaCtx.body = { success: false, code: 'REJECT' };
+        }
+    });
+
     //解析b站短链接
     router.post('/api/parseLink', async (koaCtx) => {
         let { link } = koaCtx.request.body as { link: string };

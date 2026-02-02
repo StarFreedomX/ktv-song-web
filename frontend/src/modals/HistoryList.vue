@@ -61,8 +61,8 @@ const props = defineProps({
 
 const emit = defineEmits(['go-to', 'toggle-favorite', 'undo', 're-add']);
 
-// 内部处理逻辑：去掉最后一首（正在唱的）并倒序
+// 内部处理逻辑：倒序显示已唱历史（后端已把 singing 与 sung 区分开）
 const processedHistory = computed(() => {
-    return props.historyList.slice(0, -1).reverse();
+    return props.historyList.slice().reverse();
 });
 </script>
