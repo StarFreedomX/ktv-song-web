@@ -10,10 +10,10 @@
 
         <button @click="$emit('prev')"
                 :disabled="historyEmpty && singingEmpty"
-                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20 mr-2">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <polygon points="19 4 9 12 19 20 19 4"></polygon>
-                <line x1="5" y1="5" x2="5" y2="19"></line>
+                class="p-3 text-slate-400 hover:text-indigo-600 transition active:scale-90 disabled:opacity-20">
+            <svg class="transform scale-x-[-1]" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <polygon points="5 4 15 12 5 20 5 4"></polygon>
+                <line x1="19" y1="5" x2="19" y2="19"></line>
             </svg>
         </button>
 
