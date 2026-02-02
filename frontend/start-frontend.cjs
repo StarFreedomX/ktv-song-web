@@ -34,7 +34,8 @@ app.use((req, res) => {
     res.sendFile(path.join(__dirname, 'dist/index.html'));
 });
 const server = app.listen(port, host, () => {
-    console.log(`frontend server running at: http://${host}:${port}`);
+    console.log(`frontend server listening at: http://${host}:${port}`);
+    console.log(`frontend website available at: http://localhost:${port}`);
 });
 server.on('upgrade', wsApiProxy);
 const shutdown = (signal) => {

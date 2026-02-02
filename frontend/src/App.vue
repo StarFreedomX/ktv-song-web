@@ -34,7 +34,7 @@ const UpdateStatus = Object.freeze({
 });
 
 const route = useRoute();
-const roomIdFromUrl = route.params.roomId;
+const roomIdFromUrl = route.query.roomId;
 const roomId = ref(roomIdFromUrl);
 
 // 修改页面标题
@@ -451,7 +451,6 @@ const undoSung = async (song) => {
     }
 };
 
-// TODO 整合到songOperation
 const nextSong = async () => {
     try {
         const res = await fetch(`${nextSongUrl}?roomId=${roomId.value}`, {
