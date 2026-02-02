@@ -83,7 +83,6 @@ describe('songOperation Rebase Logic', () => {
         };
 
         const result = songOperation(nowSongs, baseSongIdArray, ops, nowOp);
-        console.log(result);
         // 预期结果：['C', 'D', 'E', 'A', 'F', 'G', 'H']
         expect(result.map(s => s.id)).toEqual(['C', 'D', 'E', 'A', 'F', 'G', 'H']);
     });
