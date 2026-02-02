@@ -6,9 +6,11 @@
     ],
     "version": "0.4.1",
     "license": "MIT",
-    "keywords": ["ktv"],
+    "keywords": [
+        "ktv"
+    ],
     "author": "",
-    "packageManager": "pnpm@10.20.0",
+    "packageManager": "pnpm@10.28.2",
     "scripts": {
         "dev": "pnpm -r --parallel dev",
         "dev:backend": "pnpm --filter ./backend dev",
