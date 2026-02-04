@@ -466,7 +466,7 @@ const nextSong = async () => {
         if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
             updateStatus.value = UpdateStatus.WAITING;
         }
-        
+
     } catch (e) {
         console.error("Next Song Error:", e);
         if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
@@ -578,7 +578,7 @@ const load = async () => {
                     };
                 });
 
-                
+
 
                 setTimeout(() => {
                     queued.value.forEach(s => {
@@ -688,10 +688,12 @@ const saveNickname = () => {
 let socket = null;
 let pollingTimer = null;
 let reconnectTimer = null;
+let pingTimer = null;
 
 // 停止所有同步
 const stopSyncDrivers = () => {
     if (reconnectTimer) clearTimeout(reconnectTimer);
+    if (pingTimer) clearTimeout(pingTimer);
     if (socket) {
         socket.onclose = null;
         socket.close();
@@ -714,6 +716,11 @@ const initWebSocket = () => {
     socket.onopen = () => {
         currentSync.value = SyncStatus.WS_ONLINE;
         console.log("WebSocket connected");
+        pingTimer = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: "ping" }));// 发送 ping
+            }
+        }, 20000); // 每 20 秒发送一次 ping
     };
 
     socket.onmessage = async (event) => {

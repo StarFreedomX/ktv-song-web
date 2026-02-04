@@ -75,6 +75,15 @@ export function runKTVServer(storage: Storage) {
             if (clients.size === 0) roomClients.delete(roomId);
             ktvLogger.info(`WS Leave: Room: ${roomId} | Client: ${clientId}`);
         });
+        ctx.websocket.on('message', (message: any) => {
+            try {
+                const data = JSON.parse(message.toString());
+                // 识别心跳消息
+                if (data.type === 'ping') {
+                    ws.send(JSON.stringify({ type: 'pong' }));
+                }
+            } catch (e) {}
+        });
     });
 
 
