@@ -34,7 +34,7 @@ const UpdateStatus = Object.freeze({
 });
 
 const route = useRoute();
-const roomIdFromUrl = route.params.roomId;
+const roomIdFromUrl = route.query.roomId;
 const roomId = ref(roomIdFromUrl);
 
 // 修改页面标题
@@ -62,6 +62,8 @@ const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
+const prevSongUrl = "api/prevSong"
+const undoSungUrl = "api/undoSung"
 const shuffleSongUrl = "api/shuffle"
 const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
 const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value}&nickname=${encodeURIComponent(cfg.value.nickname || '')}`;
@@ -80,9 +82,13 @@ const showSettings = ref(false);
 const showAddModal = ref(false);
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
-// 存储
+// 存储（与后端保持一致的结构）
 /** @type {import('vue').Ref<Song[]>} */
-const songs = ref([]);
+const queued = ref([]);
+/** @type {import('vue').Ref<Song|null>} */
+const singing = ref(null);
+/** @type {import('vue').Ref<Song[]>} */
+const sung = ref([]);
 const favorites = ref(JSON.parse(localStorage.getItem('ktv_favorites') || '[]'));
 
 // 临时变量
@@ -124,14 +130,12 @@ const showTransientStatus = (status, delay = 1000) => {
 };
 
 //监听器
-// 逻辑拆分：待唱列表和已唱列表
+// 逻辑拆分：待唱/正在唱/已唱（与后端一致）
 const queueList = computed({
-    get: () => songs.value.filter(s => !s.state || s.state === 'queued'), set: (newList) => {
-        const history = songs.value.filter(s => s.state === 'sung');
-        songs.value = [...newList, ...history];
-    }
+    get: () => queued.value,
+    set: (newList) => { queued.value = newList; }
 });
-const historyList = computed(() => songs.value.filter(s => s.state === 'sung'));
+const historyList = computed(() => sung.value);
 const filteredFavorites = computed(() => {
     if (!favSearchQuery.value.trim()) {
         return favorites.value; //
@@ -144,7 +148,7 @@ watch(cfg, (newVal) => localStorage.setItem('ktv_config', JSON.stringify(newVal)
 watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
 
 // 监听正在播放歌曲的变化
-watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) => {
+watch(() => singing.value, (newSong, oldSong) => {
     // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
     if (cfg.value.hostMode && newSong && (!oldSong || newSong.id !== oldSong.id)) {
         console.log('主机模式：检测到切歌，正在自动跳转...', newSong.title);
@@ -157,7 +161,7 @@ watch(() => historyList.value[historyList.value.length - 1], (newSong, oldSong) 
             }, 800);
         }
     }
-}, { deep: true });
+});
 watch([allowUpdate, updateStatus], ([canUpdate, status]) => {
     if (canUpdate && status === UpdateStatus.WAITING) {
         performUpdate();
@@ -259,21 +263,22 @@ const commitOp = async (opData) => {
     try {
         const res = await fetch(`${commitApiUrl}?roomId=${roomId.value}`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-                idArrayHash: lastHash.value, // 这个 Hash 现在代表了旧列表的内容+顺序
+                idArrayHash: lastHash.value,
                 toIndex: opData.toIndex, song: cleanSong
             })
         }).then(r => r.json());
 
         if (res.success) {
-            if (await getHash(songs.value) !== res.hash) {
-                // console.log(songs.value, await getHash(songs.value))
+            if (lastHash.value !== res.hash) {
                 updateStatus.value = UpdateStatus.WAITING;
             } else {
                 lastHash.value = res.hash;
                 updateStatus.value = UpdateStatus.IDLE
             }
             if (res.song && opData.song) {
-                const localSong = songs.value.find(s => s.id === opData.song.id);
+                // 更新本地缓存中的歌曲信息（在 queued / singing / sung 中查找）
+                const id = opData.song.id;
+                let localSong = queued.value.find(s => s.id === id) || sung.value.find(s => s.id === id) || (singing.value && singing.value.id === id ? singing.value : null);
                 if (localSong) {
                     localSong.url = res.song.url; //bilibili://...
                     localSong.id = res.song.id;   // BV...
@@ -328,7 +333,7 @@ const add = async () => {
     if (!form.value.title || !rawUrl) return;
 
     // 计算有效长度（排除正在删除的）
-    const effectiveLen = songs.value.filter(s => !s.isDeleting && s.state !== "sung").length;
+    const effectiveLen = queued.value.filter(s => !s.isDeleting).length;
 
     const newSong = {
         id: 's-' + Math.random().toString(36).slice(2, 11),
@@ -338,12 +343,12 @@ const add = async () => {
         isNew: true
     };
 
-    // songs.value.push(newSong);
-    songs.value.splice(effectiveLen, 0, newSong);
+    // 插入到 queued 中
+    queued.value.splice(effectiveLen, 0, newSong);
     form.value = { title: '', url: '' };
 
     setTimeout(() => {
-        const target = songs.value.find(s => s.id === newSong.id);
+        const target = queued.value.find(s => s.id === newSong.id);
         if (target) target.isNew = false;
     }, 600);
 
@@ -367,7 +372,11 @@ const confirmDelete = async () => {
     songObj.isDeleting = true;
 
     setTimeout(async () => {
-        songs.value = songs.value.filter(s => s.id !== songObj.id);
+        // 从 queued / singing / sung 中移除
+        const qIdx = queued.value.findIndex(s => s.id === songObj.id);
+        if (qIdx !== -1) queued.value.splice(qIdx, 1);
+        else if (singing.value && singing.value.id === songObj.id) singing.value = null;
+        else sung.value = sung.value.filter(s => s.id !== songObj.id);
         await commitOp({
             song: songObj, toIndex: -1
         });
@@ -379,16 +388,16 @@ const moveToTop = async (song) => {
     if (queueList.value[0]?.id === song.id) return;
 
     // 这里的逻辑与 load 中的“主动移动”一致
-    const oldIndex = songs.value.findIndex(s => s.id === song.id);
+    const oldIndex = queued.value.findIndex(s => s.id === song.id);
     if (oldIndex === -1) return;
 
     song.isDeleting = true;
 
     setTimeout(async () => {
         // 从原位置移除
-        const [movedItem] = songs.value.splice(oldIndex, 1);
+        const [movedItem] = queued.value.splice(oldIndex, 1);
         // 插入到最前面 (待唱列表最前面)
-        songs.value.unshift(movedItem);
+        queued.value.unshift(movedItem);
 
         // 重置状态并触发高亮
         movedItem.isDeleting = false;
@@ -419,12 +428,29 @@ const moveToTop = async (song) => {
 };
 
 const undoSung = async (song) => {
-    await commitOp({
-        song: { ...song, state: 'queued' }, toIndex: 0
-    });
+    try {
+
+        const body = { idArrayHash: lastHash.value };
+        if (!song?.id) return;
+        body.songId = song.id;
+        const res = await fetch(`${undoSungUrl}?roomId=${roomId.value}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+        }).then(r => r.json());
+
+        if (res.code === 'REJECT') {
+            lastHash.value = EMPTY_HASH;
+        }
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+    } catch (e) {
+        console.error('Undo Sung Error:', e);
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+    }
 };
 
-// TODO 整合到songOperation
 const nextSong = async () => {
     try {
         const res = await fetch(`${nextSongUrl}?roomId=${roomId.value}`, {
@@ -436,9 +462,38 @@ const nextSong = async () => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        updateStatus.value = UpdateStatus.WAITING;
+        // 若成功或拒绝都触发拉取以同步最新状态
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+        
     } catch (e) {
         console.error("Next Song Error:", e);
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+    }
+};
+
+const prevSong = async () => {
+    try {
+        const res = await fetch(`${prevSongUrl}?roomId=${roomId.value}`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+                idArrayHash: lastHash.value
+            })
+        }).then(r => r.json());
+
+        if (res.code === 'REJECT') {
+            lastHash.value = EMPTY_HASH;
+        }
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+    } catch (e) {
+        console.error("Prev Song Error:", e);
+        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     }
 };
 
@@ -459,43 +514,50 @@ async function shuffleSongs() {
 const load = async () => {
     if (isDragging.value) return;
     try {
-        const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${(await getHash(songs.value))}`;
+        const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${lastHash.value}`;
         const res = await fetch(url).then(r => r.json());
 
         if (res.changed) {
-            const oldSongs = [...songs.value];
-            const newSongsData = res.list || []; // 处理空返回
+            const oldQueued = [...queued.value];
 
+            // 直接处理新的 SongLists 返回结构
+            const lists = res.list;
+            const queuedArr = lists.queued || [];
+            const newQueuedSongsData = [...queuedArr];
+
+            // sung 和 singing 独立赋值
+            sung.value = lists.sung || [];
+            singing.value = lists.singing || null;
             // 如果新数据就是空的，直接赋值并更新 Hash，跳过后续复杂的 LIS 计算
-            if (newSongsData.length === 0) {
-                songs.value = [];
+            if (lists.queued.length === 0) {
+                queued.value = [];
                 lastHash.value = res.hash || EMPTY_HASH;
                 return;
             }
 
-            // 计算 ID 映射
+            lastHash.value = res.hash;
+
+            // 计算 ID 映射（仅基于 queued）
             const oldIdMap = new Map();
-            oldSongs.forEach((s, i) => {
+            oldQueued.forEach((s, i) => {
                 if (!s.isDeleting) oldIdMap.set(s.id, i);
             });
 
-            // 识别“主动移动”的 ID
-            const source = newSongsData.map(s => oldIdMap.has(s.id) ? oldIdMap.get(s.id) : -1);
+            // 识别“主动移动”的 ID（仅考虑 queued）
+            const source = newQueuedSongsData.map(s => oldIdMap.has(s.id) ? oldIdMap.get(s.id) : -1);
             const lisIndices = new Set(getLISIndices(source));
 
             const activeMoveIds = new Set();
-            newSongsData.forEach((s, newIdx) => {
+            newQueuedSongsData.forEach((s, newIdx) => {
                 const oldIdx = oldIdMap.get(s.id);
-                // 只有既不在 LIS 里、又不是真正的新歌，才是要处理的“改动元素”
                 if (oldIdx !== undefined && oldIdx !== newIdx && !lisIndices.has(newIdx)) {
                     activeMoveIds.add(s.id);
                 }
             });
 
-            // 让删除项和“改动项”一起执行退出动画
-            const newIdSet = new Set(newSongsData.map(s => s.id));
-            oldSongs.forEach(s => {
-                // 如果是服务器删了，或者它是主动移动项，执行退出
+            // 让删除项和“改动项”一起执行退出动画（仅针对老的 queued）
+            const newIdSet = new Set(newQueuedSongsData.map(s => s.id));
+            oldQueued.forEach(s => {
                 if (!newIdSet.has(s.id) || activeMoveIds.has(s.id)) {
                     s.isDeleting = true;
                 }
@@ -503,35 +565,30 @@ const load = async () => {
 
             // 等待退出动画完成
             setTimeout(() => {
-                // 构建最终列表
-                songs.value = newSongsData.map((s, newIdx) => {
+                queued.value = newQueuedSongsData.map((s, newIdx) => {
                     const oldIdx = oldIdMap.get(s.id);
                     const isNew = oldIdx === undefined;
                     const isActiveMove = activeMoveIds.has(s.id);
-
-                    // 被动移动的判定（在 LIS 里但位置变了）
                     const isAffected = !isNew && !isActiveMove && oldIdx !== newIdx;
-
                     return {
-                        ...s, // 入场动画
-                        isMoved: isActiveMove, isNew: (isNew || isActiveMove), //&& oldSongs.length > 0,
+                        ...s,
+                        isMoved: isActiveMove,
+                        isNew: (isNew || isActiveMove),
                         isAffected: isAffected
                     };
                 });
 
+                
+
                 setTimeout(() => {
-                    songs.value.forEach(s => {
-                        if (s.isNew) {
-                            s.isNewActive = true;
-                        }
+                    queued.value.forEach(s => {
+                        if (s.isNew) s.isNewActive = true;
                     });
                 }, 10);
 
-                lastHash.value = res.hash;
-
                 // 清理状态
                 setTimeout(() => {
-                    songs.value.forEach(s => {
+                    queued.value.forEach(s => {
                         s.isNew = s.isAffected = s.isNewActive = false;
                     });
                 }, 600);
@@ -599,7 +656,8 @@ const saveEdit = async (updatedData) => {
 
     const song = editingSong.value;
     if (!song) return;
-    const index = songs.value.findIndex(s => s.id === song.id);
+    // 编辑操作只作用于 queued 中的歌曲（与后端语义对齐）
+    const index = queued.value.findIndex(s => s.id === song.id);
     const oldData = { title: song.title, url: song.url };
 
     // 乐观更新UI
@@ -608,7 +666,7 @@ const saveEdit = async (updatedData) => {
 
     if (index !== -1) {
         const success = await commitOp({
-            song: song, toIndex: index // 原位覆盖更新
+            song: song, toIndex: index // 原位覆盖更新（queued 内索引）
         });
         if (!success) {
             // 失败回退
@@ -663,7 +721,9 @@ const initWebSocket = () => {
             const data = JSON.parse(event.data);
             // 当服务端通知更新，且 Hash 与本地不一致时 load
             if (data.type === 'UPDATE' && data.hash !== lastHash.value) {
-                updateStatus.value = UpdateStatus.WAITING;
+                if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
+                    updateStatus.value = UpdateStatus.WAITING;
+                }
             }
         } catch (e) {
             console.error("WS Message Error:", e);
@@ -773,7 +833,7 @@ onUnmounted(() => {
             </div>
         </div>
     </header>
-    <div v-if="historyList.length > 0" class="mb-6">
+    <div class="mb-6">
         <div class="flex items-center justify-between mb-2 px-1">
     <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
         <span class="relative flex h-2 w-2">
@@ -783,17 +843,17 @@ onUnmounted(() => {
         正在播放
     </span>
         </div>
-        <div @click="goToLink(historyList[historyList.length - 1])"
+        <div @click="goToLink(singing)"
              class="song-card bg-indigo-50 border border-indigo-100 p-4 rounded-3xl flex items-center group cursor-pointer transition-all active:scale-95">
             <div class="flex-1 min-w-0 pr-4">
                 <div class="text-sm font-bold text-slate-700 truncate leading-tight group-hover:text-indigo-600 transition">
-                    {{ historyList[historyList.length - 1].title }}
+                    {{ singing?.title || "暂无在播歌曲" }}
                 </div>
                 <div class="flex items-center gap-1.5 mt-1.5">
-            <span v-if="historyList[historyList.length - 1].addedBy" class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
-                {{ historyList[historyList.length - 1].addedBy }}
+            <span class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
+                {{ singing?.addedBy || "SYSTEM" }}
             </span>
-                    <div class="text-[10px] text-slate-400 truncate opacity-70">{{ historyList[historyList.length - 1].url }}</div>
+                    <div class="text-[10px] text-slate-400 truncate opacity-70">{{ singing?.url || "" }}</div>
                 </div>
             </div>
         </div>
@@ -812,7 +872,7 @@ onUnmounted(() => {
         <button @click="activeTab = 'history'"
                 :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
                      activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
-            已唱 ({{ historyList.length === 0 ? 0 : historyList.length - 1 }})
+            已唱 ({{ historyList.length }})
         </button>
     </div>
 
@@ -903,9 +963,11 @@ onUnmounted(() => {
         :is-refreshing="isRefreshing"
         :history-empty="historyList.length === 0"
         :queue-empty="queueList.length === 0"
+        :singing-empty="!singing"
         @refresh="handleRefresh"
-        @undo="undoSung(historyList[historyList.length - 1])"
+        @undo="undoSung"
         @add="showAddModal = true"
+        @prev="prevSong"
         @next="nextSong"
         @shuffle="showShuffleConfirm = true"
     />

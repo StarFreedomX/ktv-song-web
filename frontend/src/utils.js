@@ -2,33 +2,41 @@ import { sha256 } from "js-sha256";
 
 export function initUtils(lastHash){
 
-    async function getHash(songs) {
-        if (!songs || songs.length === 0) return "EMPTY_LIST_HASH";
+    async function getHash(songLists) {
+        // Only support the new SongLists shape: { queued: [], singing: null, sung: [] }
+        if (!songLists || typeof songLists !== 'object') return "EMPTY_LIST_HASH";
 
-        const str = songs.map(s => `${s.id}:${s.title}:${s.url}:${s.state || 'queued'}:${s.addedBy || ''}`).join('|');
-        // console.log(str)
-        let finalHash;
-        // 优先使用原生 Web Crypto API (性能最好，支持安全上下文)
+        const queued = songLists.queued || [];
+        const singing = songLists.singing || null;
+        const sung = songLists.sung || [];
+
+        const isEmpty = queued.length === 0 && !singing && sung.length === 0;
+        if (isEmpty) return "EMPTY_LIST_HASH";
+
+        const songToStr = (s) => `<${encodeURIComponent(s.id)}&${encodeURIComponent(s.title)}&${encodeURIComponent(s.url)}&${encodeURIComponent(s.addedBy || '')}>`;
+        const queuedStr = queued.map(songToStr).join(',');
+        const singingStr = singing ? songToStr(singing) : 'null';
+        const sungStr = sung.map(songToStr).join(',');
+        const str = ['q:', queuedStr, 'i:', singingStr, 's:', sungStr].join(';');
+
+        // compute sha256 hex same as backend
         if (window.isSecureContext && window.crypto && window.crypto.subtle) {
             try {
                 const msgBuffer = new TextEncoder().encode(str);
                 const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
-                finalHash = Array.from(new Uint8Array(hashBuffer))
+                return Array.from(new Uint8Array(hashBuffer))
                     .map(b => b.toString(16).padStart(2, '0'))
                     .join('');
             } catch (e) {
-                console.warn("Native Crypto API failed, falling back...", e);
+                console.warn("Native Crypto API failed, falling back to js-sha256...", e);
             }
         }
-        if (typeof sha256 === 'function') { // 2. 备选方案：使用 js-sha256 库 (非安全上下文或原生失败)
-            finalHash =  sha256(str);
+        if (typeof sha256 === 'function') {
+            return sha256(str);
         }
-        // console.log(finalHash)
-        if (finalHash) return finalHash;
-        // 最终兜底：如果库也没加载出来，返回当前记录的 hash 避免崩溃，弹窗提醒
-        alert("当前环境不支持 SHA-256 哈希计算，某些操作可能无法正常进行。请使用支持的浏览器（如 Chrome、Firefox、Edge 等）并确保在 HTTPS 环境下访问。");
+
         console.error("SHA-256 calculation failed: No supported method available.");
-        return lastHash.value;
+        return "EMPTY_LIST_HASH";
     }
 
     const parseBilibiliShortLink = async (link) => {

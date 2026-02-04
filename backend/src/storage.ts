@@ -99,4 +99,14 @@ export class Storage {
         if (!this.client.isOpen) return;
         await this.client.del(`${namespace}_${key}`);
     }
+
+    close() {
+        if (this.client.isOpen) {
+            this.client.destroy();
+        }
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+    }
 }

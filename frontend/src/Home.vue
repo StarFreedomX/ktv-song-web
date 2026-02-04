@@ -53,8 +53,10 @@ const roomInput = ref('');
 
 const joinRoom = () => {
     if (roomInput.value) {
-        // 使用 vue-router 跳转到动态路径 /:roomId
-        router.push(`${roomInput.value}`);
+        router.push({
+            name: 'Room',
+            query: { roomId: roomInput.value }
+        });
     }
 };
 </script>

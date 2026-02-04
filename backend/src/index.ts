@@ -1,11 +1,14 @@
 import { runKTVServer } from "@/ktvServer";
+import { Storage } from "@/storage";
 import ktvLogger from "@/logger";
 process.env.NODE_ENV||='production';
 ktvLogger.info('Node Env is: ', process.env.NODE_ENV);
 ktvLogger.info('Debug Mode is: ', process.env.DEBUG_MODE);
 
+const storage = new Storage(process.env.REDIS_URL)
 // 启动 KTV Koa 服务器
-const koaApp = runKTVServer(process.env.REDIS_URL);
+const KTVServer = runKTVServer(storage);
+const koaApp = KTVServer.app;
 koaApp.use(async (ctx) => {
     ctx.status = 404;
     ctx.body = '404 Not Found - 路径错误';
@@ -24,7 +27,8 @@ const server = koaApp.listen(port, host, () => {
 
 function shutdown(signal: string) {
     ktvLogger.info(`[shutdown] ${signal}`);
-
+    storage.close();
+    KTVServer.close();
     server.close(() => {
         ktvLogger.info('server closed');
         process.exit(0);
