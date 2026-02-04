@@ -1,8 +1,28 @@
 # ktv-song-web
 
-KTV Song List Web
+**KTV Song List Web**
 
 前端支持自动解析b站分享字符串
+
+## 投屏功能
+
+1. 利用云视听小电视投屏
+    
+    通常需要设备开启分屏模式
+
+    通过开启**主机模式(`HostMode`)**及**App跳转**，客户端会自动追踪当前在唱歌曲
+
+    检测到歌曲更改后会自动打开bilibili
+
+    若同时在**bilibili主页**中连接了投屏设备
+
+    则会自动播放并投屏bilibili视频
+
+2. 利用投屏后端使用DLNA协议投屏
+
+    投屏后端详见[ktv-casting](https://github.com/aspromise/ktv-casting)
+
+    投屏后端将追踪当前在唱歌曲，并且可以歌曲结束自动切换下一首
 
 ## 启动方式
 
