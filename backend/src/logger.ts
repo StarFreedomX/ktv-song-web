@@ -26,6 +26,7 @@ export class KTVLogger {
     info = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('info') && logger('info', ' ' + args.map(formatMessage).join(' '));
     warn = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('warn') && logger('warn', ' ' + args.map(formatMessage).join(' '));
     debug = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('debug') && logger('debug', args.map(formatMessage).join(' '));
+    trace = (...args: any[]) => this.debugNumber >= debugTypeArray.indexOf('trace') && logger('trace', args.map(formatMessage).join(' '));
 }
 
 function formatMessage(message: any) {

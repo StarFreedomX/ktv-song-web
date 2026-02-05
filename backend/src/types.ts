@@ -1,6 +1,6 @@
 import type WebSocket from 'ws';
 
-export const debugTypeArray = ['error', 'warn', 'info', 'debug'] as const;
+export const debugTypeArray = ['error', 'warn', 'info', 'debug', 'trace'] as const;
 
 export type debugType = typeof debugTypeArray[number];
 

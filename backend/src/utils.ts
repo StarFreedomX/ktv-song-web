@@ -61,7 +61,7 @@ async function resolveBilibiliData(inputUrl: string) {
  * @param nowOp 当前操作(基于base baseSongIdArray)，index是移动后该元素的index
  */
 function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[], nowOp: OpLog): Song[] {
-    ktvLogger.debug({ baseSongIdArray, ops, nowOp })
+    ktvLogger.trace({ baseSongIdArray, ops, nowOp })
     /*
     实现逻辑：首先构造双向链表
     HEAD <-> 0 <-> A <-> 1 <-> B <-> 2 <-> C <-> 3 <-> D <-> 4 <-> E <-> 5 <-> F <-> 6 <-> G <-> 7
@@ -322,9 +322,9 @@ function songOperation(nowSongs: Song[], baseSongIdArray: string[], ops: OpLog[]
 function getHash(songLists: SongLists) {
     if (songListTools.isEmpty(songLists)) return "EMPTY_LIST_HASH"; // 给空列表一个固定标识
     const str = songListTools.songListToStr(songLists);
-    ktvLogger.debug('hash src:', str)
+    ktvLogger.trace('hash src:', str)
     const hashValue = crypto.createHash('sha256').update(str).digest('hex');
-    ktvLogger.debug('hash value:', hashValue);
+    ktvLogger.trace('hash value:', hashValue);
     return hashValue;
 }
 

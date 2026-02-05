@@ -5,7 +5,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { getHash, resolveBilibiliData, songListTools, songOperation} from "@/utils";
+import { getHash, resolveBilibiliData, songListTools, songOperation } from "@/utils";
 import { DATABASE_NAME, IdentifiedWebSocket, OpLog, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 export function runKTVServer(storage: Storage) {
@@ -82,7 +82,7 @@ export function runKTVServer(storage: Storage) {
                 if (data.type === 'ping') {
                     ws.send(JSON.stringify({ type: 'pong' }));
                 }
-            } catch (e) {}
+            } catch (e) { }
         });
     });
 
@@ -207,7 +207,7 @@ export function runKTVServer(storage: Storage) {
             toIndex: toIndex,
             timestamp: Date.now()
         };
-        ktvLogger.debug('nextSong OP: ', roomId, currentOp);
+        ktvLogger.trace('nextSong OP: ', roomId, currentOp);
         try {
             const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, laterOps, currentOp);
             logs.push(currentOp);
@@ -447,8 +447,6 @@ export function runKTVServer(storage: Storage) {
         const body = koaCtx.request.body as SongOperationBody;
         const { idArrayHash, song, toIndex } = body;
         ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
-        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
-        // ktvLogger.debug(song?.title,'POST AT:', Date.now())
 
         // 如果是 B 站链接
         if (song && song.url && (song.url.includes('b23.tv') || song.url.includes('bilibili.com') || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
@@ -480,7 +478,6 @@ export function runKTVServer(storage: Storage) {
             toIndex: toIndex >= queueSongList?.length ? queueSongList.length - (alreadyHad ? 1 : 0) : toIndex,
             timestamp: Date.now()
         };
-        // ktvLogger.debug(song?.title,'BUILD AT:', Date.now())
 
 
         const logs: OpLog[] = roomOpCache[roomId] || [];
@@ -493,8 +490,8 @@ export function runKTVServer(storage: Storage) {
                 break;
             }
         }
-        ktvLogger.debug('server queued song lists:', queueSongList.map(s => s.id));
-        ktvLogger.debug(song?.title, 'FIND INDEX:', { hitIdx, latest, serverHash, logsLength: logs?.length })
+        ktvLogger.trace('server queued song lists:', queueSongList.map(s => s.id));
+        ktvLogger.trace(song?.title, 'FIND INDEX:', { hitIdx, latest, serverHash, logsLength: logs?.length })
 
         // REJECT 逻辑：如果前端传来的 Hash 在日志里找不到
         // 可能是因为服务器重启导致 Log 丢失，或者前端落后太多
@@ -505,30 +502,22 @@ export function runKTVServer(storage: Storage) {
 
         const baseLog = logs.at(hitIdx);
         const baseIdArray = latest ? queueSongList.map(s => s.id) : [...baseLog.baseIdArray];
-        // ktvLogger.debug(song?.title,'BASE ARRAY AT:', Date.now())
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
-        // ktvLogger.debug(song?.title,'LATER OPS AT:', Date.now())
 
         try {
             // 执行重演逻辑
-            // ktvLogger.debug(currentOp?.song?.title,'IN AT:', Date.now())
             const tempSongList = songOperation(queueSongList, baseIdArray, laterOps, currentOp);
-            const finalSongLists = {...allSongLists, queued: tempSongList};
-            // ktvLogger.debug(currentOp?.song?.title,'OUT AT:', Date.now())
+            const finalSongLists = { ...allSongLists, queued: tempSongList };
             const finalHash = getHash(finalSongLists);
             ktvLogger.debug('new hash:', finalHash);
             logs.push(currentOp);
-            // ktvLogger.debug(currentOp?.song?.title,'PUSH AT:', Date.now())
 
             if (logs.length > 50) logs.shift();
 
             roomSongsCache[roomId] = finalSongLists;
             roomOpCache[roomId] = logs;
-            // ktvLogger.debug(currentOp?.song?.title,'SYNC AT:', Date.now())
             await storage.set(DATABASE_NAME, roomId, finalSongLists, CACHE_EXPIRE_TIME);
-            // ktvLogger.debug(currentOp?.song?.title,'CACHE AT:', Date.now())
             koaCtx.body = { success: true, hash: finalHash, song };
-            // console.log(finalSongs)
             notifyUpdate(roomId, finalHash)
         } catch (e) {
             ktvLogger.error("Operation re-run failed:", e);

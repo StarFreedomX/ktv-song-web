@@ -7,7 +7,7 @@
 ## 投屏功能
 
 1. 利用云视听小电视投屏
-    
+
     通常需要设备开启分屏模式
 
     通过开启**主机模式(`HostMode`)**及**App跳转**，客户端会自动追踪当前在唱歌曲
@@ -89,7 +89,7 @@ ktv-web-backend:
         # Docker环境默认值为0.0.0.0
         # 其他环境默认值为localhost
         - HOST=0.0.0.0
-        # 日志模式
+        # 日志模式 详细程度: error < warn < info < debug < trace
         - DEBUG_MODE=info
         # REDIS数据库地址
         # Docker环境默认值为redis://redis:6379
@@ -113,7 +113,7 @@ ktv-web-frontend:
 1. 前往[Release](https://github.com/StarFreedomX/ktv-song-web/releases)页面下载构建好的包
 2. 解压，进入解压后的目录
 3. 执行`pnpm install --prod`
-   > 可以使用`--frozen-lockfile`来锁定依赖版本
+    > 可以使用`--frozen-lockfile`来锁定依赖版本
 4. 运行`pnpm start`
 
 ### 本地构建启动
@@ -144,6 +144,7 @@ pnpm start
 默认环境见上方 [默认配置](#默认配置)
 
 ### 开发模式启动
+
 ```shell
 git clone https://github.com/StarFreedomX/ktv-song-web.git
 cd ktv-song-web
