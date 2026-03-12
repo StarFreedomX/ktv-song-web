@@ -1,49 +1,35 @@
-<script setup>
-import ComfirmButton from './components/ComfirmButton.vue';
-
-// 定义属性
-const props = defineProps({
-    modelValue: Boolean // 控制显示隐藏
-});
-
-// 定义事件
-const emit = defineEmits(['update:modelValue', 'confirm']);
-
-const handleConfirm = () => {
-    emit('confirm'); // 触发确认事件
-    emit('update:modelValue', false); // 关闭弹窗
-};
-</script>
-
 <template>
     <transition name="modal-fade">
         <div v-if="modelValue"
-             class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+             class="modal-mask"
              @click.self="$emit('update:modelValue', false)">
 
-            <div class="modal-container bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 space-y-6">
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-orange-50 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div class="modal-container">
+                <div class="text-center space-y-6">
+                    <div class="modal-icon-wrapper">
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                             <polyline points="16 3 21 3 21 8"></polyline>
                             <line x1="4" y1="20" x2="21" y2="3"></line>
                         </svg>
                     </div>
-                    <h3 class="text-xl font-bold text-slate-800">确认打乱列表？</h3>
-                    <p class="text-slate-500 mt-2">所有歌曲的播放顺序将被随机重新排列。</p>
+
+                    <div class="space-y-2">
+                        <h3 class="modal-title">确认打乱列表？</h3>
+                        <p class="modal-desc">所有歌曲的播放顺序将被随机重新排列。</p>
+                    </div>
                 </div>
 
-                <div class="flex space-x-3">
+                <div class="modal-actions">
                     <ComfirmButton
                         type="secondary"
-                        class="flex-1 !py-3 !rounded-xl"
+                        class="flex-1"
                         @click="$emit('update:modelValue', false)"
                     >
                         取消
                     </ComfirmButton>
                     <ComfirmButton
                         type="primary"
-                        class="flex-1 !py-3 !rounded-xl !bg-orange-500 !shadow-orange-200"
+                        class="flex-1"
                         @click="handleConfirm"
                     >
                         立即打乱
@@ -53,3 +39,67 @@ const handleConfirm = () => {
         </div>
     </transition>
 </template>
+
+<script setup>
+import ComfirmButton from './components/ComfirmButton.vue';
+
+const props = defineProps({
+    modelValue: Boolean
+});
+
+const emit = defineEmits(['update:modelValue', 'confirm']);
+
+const handleConfirm = () => {
+    emit('confirm');
+    emit('update:modelValue', false);
+};
+</script>
+
+<style scoped>
+@reference "tailwindcss";
+
+.modal-mask {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-sm;
+    background-color: rgba(15, 23, 42, 0.4);
+}
+
+.modal-container {
+    @apply w-full max-w-sm rounded-3xl shadow-2xl border p-6 space-y-8;
+    background-color: var(--brand-color-bg);
+    border-color: var(--border-base);
+}
+
+/* 警告图标样式 */
+.modal-icon-wrapper {
+    @apply w-16 h-16 rounded-full flex items-center justify-center mx-auto transition-transform duration-500;
+    background-color: #fff7ed; /* 对应 orange-50，可后续提取为 var(--warning-color-light) */
+    color: #f97316;           /* 对应 orange-500，可后续提取为 var(--warning-color) */
+}
+
+.modal-container:hover .modal-icon-wrapper {
+    @apply rotate-12 scale-110;
+}
+
+.modal-title {
+    @apply text-xl font-bold;
+    color: var(--text-main);
+}
+
+.modal-desc {
+    @apply text-sm px-4;
+    color: var(--text-sub);
+}
+
+.modal-actions {
+    @apply flex space-x-3;
+}
+
+/* 过渡动画 */
+.modal-fade-enter-active, .modal-fade-leave-active {
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.modal-fade-enter-from, .modal-fade-leave-to {
+    opacity: 0;
+    transform: scale(0.9);
+}
+</style>

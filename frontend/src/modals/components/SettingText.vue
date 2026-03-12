@@ -1,17 +1,17 @@
 <template>
-    <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 transition-all">
-        <div class="flex items-center justify-between mb-2">
-            <span class="font-bold text-slate-700">{{ title }}</span>
+    <div class="setting-text-container">
+        <div class="setting-text-header">
+            <span class="setting-text-title">{{ title }}</span>
 
             <button v-if="actionText && !isEditing"
                     @click="startEdit"
-                    class="text-xs font-bold text-indigo-600 hover:underline">
+                    class="setting-text-action">
                 {{ actionText }}
             </button>
         </div>
 
-        <div class="text-sm font-medium text-left">
-            <div v-if="!isEditing" class="text-slate-500 py-1">
+        <div class="setting-text-body">
+            <div v-if="!isEditing" class="setting-text-display">
                 <slot>{{ modelValue || '未设置' }}</slot>
             </div>
 
@@ -20,7 +20,7 @@
                 ref="inputRef"
                 v-model="editValue"
                 type="text"
-                class="w-full bg-white border border-slate-200 rounded-lg px-3 py-1 text-slate-700 outline-none focus:border-indigo-500 shadow-sm"
+                class="setting-text-input"
                 @blur="handleBlur"
                 @keyup.enter="$event.target.blur()"
             />
@@ -41,7 +41,6 @@ const inputRef = ref(null);
 const startEdit = () => {
     editValue.value = props.modelValue;
     isEditing.value = true;
-    // 自动聚焦
     nextTick(() => {
         inputRef.value?.focus();
     });
@@ -49,9 +48,67 @@ const startEdit = () => {
 
 const handleBlur = () => {
     isEditing.value = false;
-    // 如果值有变动，通知父组件修改 draft
     if (editValue.value !== props.modelValue) {
         emit('update:modelValue', editValue.value);
     }
 };
 </script>
+
+<style scoped>
+@reference "tailwindcss";
+
+.setting-text-container {
+    /* === 1. 颜色变量 (对接 App.vue) === */
+    --st-bg: var(--brand-color-bg);       /* 容器背景色 */
+    --st-border: var(--border-base);      /* 容器边框色 */
+    --st-title-color: var(--text-main);   /* 标题文字颜色 */
+    --st-action-color: var(--brand-color); /* 操作按钮颜色 */
+    --st-value-color: var(--text-main);    /* 展示值文字颜色 */
+
+    /* === 2. 输入框变量 === */
+    --st-input-bg: white;
+    --st-input-border: var(--border-base);
+    --st-input-focus: var(--brand-color);
+    --st-input-text: var(--text-main);
+
+    @apply p-4 rounded-2xl border transition-all;
+    background-color: var(--st-bg);
+    border-color: var(--st-border);
+}
+
+.setting-text-header {
+    @apply flex items-center justify-between mb-2;
+}
+
+.setting-text-title {
+    @apply font-bold;
+    color: var(--st-title-color);
+}
+
+.setting-text-action {
+    @apply text-xs font-bold hover:underline;
+    color: var(--st-action-color);
+}
+
+.setting-text-body {
+    @apply text-sm font-medium text-left;
+}
+
+.setting-text-display {
+    @apply py-1;
+    color: var(--st-value-color);
+}
+
+.setting-text-input {
+    @apply w-full rounded-xl px-3 py-1 outline-none shadow-sm border transition-all;
+    background-color: var(--st-input-bg);
+    border-color: var(--st-input-border);
+    color: var(--st-input-text);
+}
+
+.setting-text-input:focus {
+    /* 聚焦时边框色对齐主题色 */
+    border-color: var(--st-input-focus);
+    box-shadow: 0 0 0 2px rgba(var(--brand-color-rgb), 0.1);
+}
+</style>

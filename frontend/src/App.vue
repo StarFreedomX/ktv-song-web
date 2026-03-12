@@ -791,23 +791,21 @@ onUnmounted(() => {
 </script>
 
 <template>
+    <div class="brand-theme">
 
     <header class="mb-6 flex justify-between items-start">
         <div @click="backHome()" class="cursor-pointer group">
-            <h1 class="text-3xl font-black text-indigo-600">KTV<br/>Queue</h1>
-            <p class="text-slate-400">房间ID: {{ roomId }}</p>
+            <h1 class="brand-title">KTV<br/>Queue</h1>
+            <p class="text-sub">房间ID: {{ roomId }}</p>
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
                 <button @click="cfg.hostMode = !cfg.hostMode"
-                        :class="['px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5',
-                     cfg.hostMode ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400']">
-                    <span :class="['w-1.5 h-1.5 rounded-full', cfg.hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
+                        :class="['btn-host', cfg.hostMode ? 'active' : 'inactive']">
+                    <span :class="['dot-status', cfg.hostMode ? 'bg-green-400 animate-pulse' : 'bg-slate-300']"></span>
                     主机模式 {{ cfg.hostMode ? 'ON' : 'OFF' }}
                 </button>
-                <button @click="showFavoritesModal = true"
-                        class="p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-600 text-xs font-bold hover:text-indigo-600 transition flex items-center gap-1"
-                >
+                <button @click="showFavoritesModal = true" class="btn-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
                     </svg>
@@ -823,62 +821,57 @@ onUnmounted(() => {
             </div>
 
             <div class="flex flex-col items-end gap-1">
-                <div :class="['px-2 py-0.5 rounded-lg border flex items-center gap-1.5 transition-all shadow-sm',
+                <div :class="['px-2 py-0.5 rounded-xl border flex items-center gap-1.5 transition-all shadow-sm',
                 currentSync === SyncStatus.SUCCESS ? 'bg-emerald-50 border-emerald-200' :
                 currentSync === SyncStatus.FAILED ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200']">
-
-                <span class="relative flex h-1.5 w-1.5">
-                    <span v-if="currentSync.dot.includes('animate')"
-                          :class="['absolute inline-flex h-full w-full rounded-full opacity-75', currentSync.dot]"></span>
-                    <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', currentSync.dot]"></span>
-                </span>
-
-                    <span :class="['text-[9px] font-black uppercase tracking-tighter', currentSync.color]">
-                    {{ currentSync.label }}
-                </span>
+                    <span class="relative flex h-1.5 w-1.5">
+                        <span v-if="currentSync.dot.includes('animate')"
+                              :class="['absolute inline-flex h-full w-full rounded-full opacity-75', currentSync.dot]"></span>
+                        <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', currentSync.dot]"></span>
+                    </span>
+                    <span :class="['sync-label', currentSync.color]">
+                        {{ currentSync.label }}
+                    </span>
                 </div>
             </div>
         </div>
     </header>
+
     <div class="mb-6">
         <div class="flex items-center justify-between mb-2 px-1">
-    <span class="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-        <span class="relative flex h-2 w-2">
-            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-            <span class="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
-        </span>
-        正在播放
-    </span>
+            <span class="status-indicator-text">
+                <span class="relative flex h-2 w-2">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-light opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-brand"></span>
+                </span>
+                正在播放
+            </span>
         </div>
-        <div @click="goToLink(singing)"
-             class="song-card bg-indigo-50 border border-indigo-100 p-4 rounded-3xl flex items-center group cursor-pointer transition-all active:scale-95">
+        <div @click="goToLink(singing)" class="now-playing-card group">
             <div class="flex-1 min-w-0 pr-4">
-                <div class="text-sm font-bold text-slate-700 truncate leading-tight group-hover:text-indigo-600 transition">
+                <div class="now-playing-title truncate">
                     {{ singing?.title || "暂无在播歌曲" }}
                 </div>
                 <div class="flex items-center gap-1.5 mt-1.5">
-            <span class="shrink-0 text-[9px] px-1.5 py-0.5 bg-white text-indigo-500 rounded font-bold border border-indigo-100">
-                {{ singing?.addedBy || "SYSTEM" }}
-            </span>
-                    <div class="text-[10px] text-slate-400 truncate opacity-70">{{ singing?.url || "" }}</div>
+                    <span class="user-badge">
+                        {{ singing?.addedBy || "SYSTEM" }}
+                    </span>
+                    <div class="url-text truncate">{{ singing?.url || "" }}</div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- 切换按钮 -->
-    <div class="mb-6 flex p-1 bg-slate-100 rounded-2xl relative">
-        <div class="absolute top-1 left-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-xl shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.4,1.2,0.3,1)]"
+    <div class="tab-container">
+        <div class="tab-slider"
              :style="{ transform: activeTab === 'history' ? 'translateX(100%)' : 'translateX(0)' }">
         </div>
         <button @click="activeTab = 'queue'"
-                :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
-                     activeTab === 'queue' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
+                :class="['tab-btn', activeTab === 'queue' ? 'active' : 'inactive']">
             待唱 ({{ queueList.length }})
         </button>
         <button @click="activeTab = 'history'"
-                :class="['relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200',
-                     activeTab === 'history' ? 'text-indigo-600' : 'text-slate-400 hover:text-slate-600']">
+                :class="['tab-btn', activeTab === 'history' ? 'active' : 'inactive']">
             已唱 ({{ historyList.length }})
         </button>
     </div>
@@ -981,7 +974,125 @@ onUnmounted(() => {
 
 
     <div class="h-24"></div>
-
+    </div>
 </template>
+<style>
+:root {
+    /* 核心色：FF3377 */
+    --brand-color: #FF3377;
+    --brand-color-rgb: 255, 51, 119;
+    --brand-color-dark: #E62E6B;
+    --brand-color-light: #FFD6E4;
+    --brand-color-lighter: #FFF5FA;
+    --brand-color-bg: #FEFEFC;
+    --brand-color-bd: #FEFEFC;
 
+    /* 基础辅助色 */
+    --text-main: #334155;
+    --text-sub: #94a3b8;
+    --border-base: #e2e8f0;
+    --bg-light: #FEFEFC;
 
+    --danger-color: #ef4444;
+    --danger-bg: #fef2f2;
+}
+</style>
+<style scoped>
+@reference "tailwindcss";
+
+/* 2. 基础文字样式 */
+.brand-title {
+    @apply text-3xl font-black transition-colors;
+    color: var(--brand-color);
+}
+
+.text-sub {
+    color: var(--text-sub);
+}
+
+/* 3. 按钮组件化 */
+.btn-host {
+    @apply px-3 py-2 rounded-xl border transition text-[10px] font-black flex items-center gap-1.5;
+}
+.btn-host.active {
+    @apply text-white shadow-md;
+    background-color: var(--brand-color);
+    border-color: var(--brand-color);
+}
+.btn-host.inactive {
+    @apply bg-white border-slate-200 text-slate-400;
+}
+
+.btn-icon {
+    @apply p-2 bg-white rounded-xl shadow-sm border border-slate-200 text-slate-500 transition;
+}
+.btn-icon:hover {
+    color: var(--brand-color);
+}
+
+.dot-status {
+    @apply w-1.5 h-1.5 rounded-full;
+}
+
+/* 4. 同步状态标签 */
+.sync-badge {
+    @apply px-2 py-0.5 rounded-xl border flex items-center gap-1.5 transition-all shadow-sm;
+}
+.sync-label {
+    @apply text-[9px] font-black uppercase tracking-tighter;
+}
+
+/* 5. 正在播放卡片 */
+.status-indicator-text {
+    @apply text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5;
+    color: var(--text-sub);
+}
+.bg-brand { background-color: var(--brand-color); }
+.bg-brand-light { background-color: var(--brand-color-light); }
+
+.now-playing-card {
+    @apply border p-4 rounded-3xl flex items-center transition-all active:scale-95 cursor-pointer;
+    background-color: var(--brand-color-lighter);
+    border-color: var(--brand-color-light);
+}
+
+.now-playing-title {
+    @apply text-sm font-bold leading-tight transition;
+    color: var(--text-main);
+}
+.now-playing-card:hover .now-playing-title {
+    color: var(--brand-color);
+}
+
+.user-badge {
+    @apply shrink-0 text-[9px] px-1.5 py-0.5 bg-white rounded font-bold border;
+    color: var(--brand-color);
+    border-color: var(--brand-color-light);
+}
+
+.url-text {
+    @apply text-[10px] opacity-70;
+    color: var(--text-sub);
+}
+
+/* 6. Tab 切换组件 */
+.tab-container {
+    @apply mb-6 flex p-1 rounded-2xl relative border;
+    border-color: var(--brand-color-light);
+    background-color: var(--bg-light);
+}
+
+.tab-slider {
+    @apply absolute top-1 left-1 bottom-1 w-[calc(50%-4px)] bg-white rounded-xl shadow-sm transition-transform duration-300 ease-[cubic-bezier(0.4,1.2,0.3,1)];
+}
+
+.tab-btn {
+    @apply relative z-10 flex-1 py-2.5 text-sm font-bold rounded-xl transition-all duration-200;
+}
+.tab-btn.active {
+    color: var(--brand-color);
+}
+.tab-btn.inactive {
+    @apply text-slate-400 hover:text-slate-600;
+}
+</style>

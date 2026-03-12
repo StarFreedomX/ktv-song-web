@@ -84,6 +84,8 @@ export function runKTVServer(storage: Storage) {
                 }
             } catch (e) { }
         });
+        ctx.websocket.on('error', (err) => console.error('WS Error Details:', err));
+        ctx.websocket.on('close', (code, reason) => console.log('Closed with:', code, reason));
     });
 
 
