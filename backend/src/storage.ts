@@ -1,10 +1,10 @@
 import { createClient, RedisClientType } from 'redis';
 import ktvLogger from '@/logger';
 
-interface StoredValue<T> {
+type LegacyStoredValue<T> = {
     value: T;
     expireAt?: number;
-}
+};
 
 export class Storage {
     private client: RedisClientType;
@@ -69,27 +69,32 @@ export class Storage {
 
     async set<T>(namespace: string, key: string, value: T, ttlMs?: number) {
         if (!this.client.isOpen) return;
-
-        const obj: StoredValue<T> = ttlMs
-            ? { value, expireAt: Date.now() + ttlMs }
-            : { value };
-
-        await this.client.set(`${namespace}_${key}`, JSON.stringify(obj));
+        const redisKey = `${namespace}_${key}`;
+        const payload = JSON.stringify(value);
+        if (typeof ttlMs === 'number' && ttlMs > 0) {
+            await this.client.set(redisKey, payload, { PX: ttlMs });
+            return;
+        }
+        await this.client.set(redisKey, payload);
     }
 
     async get<T>(namespace: string, key: string): Promise<T | undefined> {
         if (!this.client.isOpen) return undefined;
-
-        const raw = await this.client.get(`${namespace}_${key}`);
+        const redisKey = `${namespace}_${key}`;
+        const raw = await this.client.get(redisKey);
         if (!raw || typeof raw !== 'string') return undefined;
 
         try {
-            const obj: StoredValue<T> = JSON.parse(raw);
-            if (obj.expireAt && Date.now() > obj.expireAt) {
-                await this.client.del(`${namespace}_${key}`);
-                return undefined;
+            const parsed: unknown = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+                const obj = parsed as LegacyStoredValue<T>;
+                if (obj.expireAt && Date.now() > obj.expireAt) {
+                    await this.client.del(redisKey);
+                    return undefined;
+                }
+                return obj.value;
             }
-            return obj.value;
+            return parsed as T;
         } catch {
             return undefined;
         }

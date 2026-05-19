@@ -1,8 +1,15 @@
 # --- 阶段 1: 构建 ---
 FROM node:22-alpine AS builder
 
+# 强制使用镜像源，避免构建时走默认 npm registry
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+    npm_config_registry=https://registry.npmmirror.com \
+    PNPM_HOME=/root/.local/share/pnpm
+
 # 安装 pnpm
 RUN npm install -g pnpm
+RUN npm config set registry ${NPM_CONFIG_REGISTRY} && \
+    pnpm config set registry ${NPM_CONFIG_REGISTRY}
 
 WORKDIR /app
 
@@ -22,7 +29,7 @@ RUN export PROJECT_ROOT=/app/backend/ && \
     rm -rf /app/backend/app-minimal
 
 # --- 阶段 2: 运行 ---
-FROM caomeiyouren/alpine-nodejs-minimize:1.0.0 AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # 设置环境变量

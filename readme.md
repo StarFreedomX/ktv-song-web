@@ -2,7 +2,15 @@
 
 **KTV Song List Web**
 
-前端支持自动解析b站分享字符串
+前端支持自动解析 B 站分享字符串，并支持在「添加歌曲」里直接搜索 B 站 KTV 视频一键点歌。
+
+## B站搜索 + Redis缓存
+
+- 前端：`添加新歌曲` 弹窗内输入关键词，调用后端 `/api/bilibiliSearch` 获取候选；选择后会调用 `/api/bilibiliSearch/select` 记录点击热度用于排序。
+- 后端：会对搜索结果做两层缓存
+  - `bilibili_search_cache`：按关键词缓存搜索结果（默认 1 天）
+  - `bilibili_search_catalog`：全局搜索目录（默认 14 天），用于做“局部匹配 + 热度排序”
+- Redis：用于缓存歌曲列表、搜索结果、点击热度等。后端优先使用 Redis TTL（无需额外的“expireAt”逻辑）。
 
 ## 投屏功能
 
@@ -77,6 +85,23 @@ docker compose up -d
 # 如果使用旧版docker compose (v1),则使用docker-compose up -d
 ```
 
+### 使用 Docker Compose 开发调试（不在宿主机安装依赖）
+
+项目的 `backend/Dockerfile` 与 `frontend/Dockerfile` 会在镜像构建阶段安装依赖并打包，因此你可以直接用 Docker 进行调试与验证，而无需在宿主机执行 `npm install` / `pnpm install` 产生 `node_modules`。
+
+```shell
+# 构建并启动（会重新 build 两个镜像）
+docker compose up -d --build --force-recreate --remove-orphans
+
+# 查看日志
+docker compose logs -f ktv-web-backend
+docker compose logs -f ktv-web-frontend
+```
+
+访问：`http://localhost:5526/?roomId=demo`
+
+如果你想直接调后端接口，也可以访问：`http://localhost:5823/api/songListInfo?roomId=demo`
+
 #### 默认配置
 
 ```yaml
@@ -99,6 +124,10 @@ ktv-web-backend:
         - CACHE_DATA_EXPIRE_TIME=86400000
         # 内存中歌曲操作过期时间 默认 5 min
         - CACHE_OP_EXPIRE_TIME=300000
+        # B站搜索缓存（关键词）过期时间 默认 1 day
+        - SEARCH_CACHE_EXPIRE_TIME=86400000
+        # B站搜索目录缓存过期时间 默认 14 day
+        - SEARCH_CATALOG_EXPIRE_TIME=1209600000
 ktv-web-frontend:
     # ......
     environment:
