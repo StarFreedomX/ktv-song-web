@@ -198,7 +198,9 @@ async function searchBilibiliKtvVideos(keyword: string) {
                     title: titleText,
                     pic: normalizeBilibiliPic(item.pic),
                     author: stripHtml(item.author || ''),
-                    tags: detectedTags.length ? [...detectedTags] : [tag],
+                    // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
+                    // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
+                    tags: detectedTags.length ? [...detectedTags] : [],
                     parts: []
                 });
             });
@@ -261,17 +263,38 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
     const normalizedTitleParts = `${titleText} ${partsText}`.trim();
     if (!normalizedTitleParts) return 0;
 
+    const stopwords = new Set([
+        // EN common stopwords (keep small, just to avoid noisy matches)
+        'the', 'and', 'for', 'with', 'from', 'this', 'that', 'you', 'your', 'are', 'was', 'were', 'to', 'of', 'in', 'on', 'at',
+        // romanization artifacts / very common short words
+        'feat', 'ft',
+    ]);
+
     const tokens = (keyword || '')
         .toLowerCase()
         .split(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;]+/g)
         .map(t => normalizeSearchText(t))
-        .filter(t => t.length >= 3);
+        .filter(t => t.length >= 3 && !stopwords.has(t));
 
-    if (tokens.length === 0) {
-        if (!normalizedTitleParts.includes(normalizedKeyword)) return 0;
-    } else {
-        const hitCount = tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0);
-        if (hitCount === 0) return 0;
+    const tokenHits = tokens.length
+        ? tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0)
+        : 0;
+
+    // 宁缺勿滥：filter aggressively before scoring.
+    // Accept if full keyword matches title/parts, otherwise require multi-token evidence.
+    const fullMatch = normalizedTitleParts.includes(normalizedKeyword);
+    if (!fullMatch) {
+        if (tokens.length === 0) return 0;
+        if (tokens.length === 1) {
+            // Single token queries are too ambiguous; require a strong signal.
+            if (!normalizedTitleParts.includes(tokens[0]) || tokens[0].length < 5) return 0;
+        } else if (tokens.length === 2) {
+            if (tokenHits < 2) return 0;
+        } else {
+            // 3+ tokens: require at least 2 hits, and at least one hit is a "long" token.
+            const longHit = tokens.some(t => t.length >= 5 && normalizedTitleParts.includes(t));
+            if (tokenHits < 2 || !longHit) return 0;
+        }
     }
 
     let score = 10;
@@ -286,10 +309,7 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
     score += Math.max(0, 20 - Math.max(0, item.title.length - keyword.length));
 
     // Token hits: reward each token matched in title/parts.
-    if (tokens.length) {
-        const tokenHits = tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0);
-        score += tokenHits * 35;
-    }
+    if (tokens.length) score += tokenHits * 35;
     return score;
 }
 

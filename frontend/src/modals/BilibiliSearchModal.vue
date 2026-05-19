@@ -7,7 +7,9 @@
                 <div class="flex items-center justify-between px-2">
                     <div>
                         <h3 class="text-xl font-black text-slate-800">Bilibili 选歌</h3>
-                        <div class="text-xs text-slate-400 font-semibold mt-0.5">搜索结果在这里单独展开，方便选分P</div>
+                        <div class="text-xs text-slate-400 font-semibold mt-0.5">
+                            搜索结果仅供参考，受 API 限制；如没搜到想要的歌曲，建议直接去 B 站搜索后粘贴链接
+                        </div>
                     </div>
                     <button @click="handleClose"
                             class="flex items-center gap-1.5 px-3 border-1 py-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all group">
