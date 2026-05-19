@@ -58,6 +58,7 @@ export interface BilibiliSearchVideo {
     bvid: string
     title: string
     pic: string
+    picProxy?: string
     author?: string
     tags: string[]
     parts: BilibiliVideoPart[]

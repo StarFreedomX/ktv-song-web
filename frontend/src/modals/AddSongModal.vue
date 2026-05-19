@@ -44,7 +44,15 @@
                             class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2"
                         >
                             <div class="flex gap-3">
-                                <img :src="item.pic" :alt="item.title" class="w-20 h-12 rounded-xl object-cover bg-slate-200 shrink-0">
+                                <img
+                                    :src="item.pic"
+                                    :alt="item.title"
+                                    referrerpolicy="no-referrer"
+                                    loading="lazy"
+                                    decoding="async"
+                                    class="w-20 h-12 rounded-xl object-cover bg-slate-200 shrink-0"
+                                    @error="onImgError($event, item)"
+                                >
                                 <div class="min-w-0 flex-1">
                                     <div class="text-sm font-bold text-slate-800 line-clamp-2">{{ item.title }}</div>
                                     <div v-if="item.author" class="mt-0.5 text-[11px] text-slate-600 font-semibold truncate">
@@ -188,6 +196,13 @@ const onAutoInput = (e) => {
     const value = e.target.value;
     emit('update:autoInput', value);
     emit('auto-recognize', value);
+};
+
+const onImgError = (event, item) => {
+    const img = event?.target;
+    if (!img || !item?.picProxy) return;
+    if (typeof img.src === 'string' && img.src.includes('/api/bilibiliImage')) return;
+    img.src = item.picProxy;
 };
 </script>
 

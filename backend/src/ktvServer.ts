@@ -87,10 +87,10 @@ export function runKTVServer(storage: Storage) {
         await storage.set(SEARCH_CATALOG_NAMESPACE, SEARCH_CATALOG_KEY, items, SEARCH_CATALOG_EXPIRE_TIME);
     };
 
-    const withProxyImage = (items: BilibiliSearchVideo[]) => {
+    const attachProxyImage = (items: BilibiliSearchVideo[]) => {
         return items.map(item => ({
             ...item,
-            pic: item.pic ? getImageProxyUrl(item.pic) : ''
+            picProxy: item.pic ? getImageProxyUrl(item.pic) : ''
         }));
     };
 
@@ -550,7 +550,7 @@ export function runKTVServer(storage: Storage) {
             koaCtx.body = {
                 success: true,
                 keyword: normalizeSearchText(keyword),
-                items: withProxyImage(sortedItems)
+                items: attachProxyImage(sortedItems)
             };
         } catch (error) {
             ktvLogger.error('Bilibili search failed', error);

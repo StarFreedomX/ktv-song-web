@@ -44,7 +44,15 @@
                             class="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 space-y-3"
                         >
                             <div class="flex gap-4">
-                                <img :src="item.pic" :alt="item.title" class="w-28 h-16 rounded-2xl object-cover bg-slate-200 shrink-0">
+                                <img
+                                    :src="item.pic"
+                                    :alt="item.title"
+                                    referrerpolicy="no-referrer"
+                                    loading="lazy"
+                                    decoding="async"
+                                    class="w-28 h-16 rounded-2xl object-cover bg-slate-200 shrink-0"
+                                    @error="onImgError($event, item)"
+                                >
                                 <div class="min-w-0 flex-1">
                                     <button
                                         type="button"
@@ -136,6 +144,13 @@ const emit = defineEmits([
 
 const handleClose = () => {
     emit('update:modelValue', false);
+};
+
+const onImgError = (event, item) => {
+    const img = event?.target;
+    if (!img || !item?.picProxy) return;
+    if (typeof img.src === 'string' && img.src.includes('/api/bilibiliImage')) return;
+    img.src = item.picProxy;
 };
 </script>
 
