@@ -45,3 +45,16 @@ export interface OpLog {
     toIndex: number
     timestamp: number
 }
+
+export interface BilibiliVideoPart {
+    page: number
+    part: string
+}
+
+export interface BilibiliSearchVideo {
+    bvid: string
+    title: string
+    pic: string
+    tags: string[]
+    parts: BilibiliVideoPart[]
+}

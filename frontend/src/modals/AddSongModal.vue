@@ -16,6 +16,88 @@
 
                 <div class="space-y-1">
                     <label class="modal-label">
+                        Bilibili KTV 搜索
+                    </label>
+                    <div class="flex gap-2">
+                        <input
+                            name="bilibili_search_keyword"
+                            autocomplete="on"
+                            :value="searchKeyword"
+                            @input="$emit('update:searchKeyword', $event.target.value)"
+                            @keyup.enter="$emit('search')"
+                            class="flex-1 px-4 py-3 bg-sky-50/60 rounded-2xl outline-none border-2 border-transparent focus:border-sky-200 transition text-sm"
+                            placeholder="输入歌名或歌曲关键词"
+                        >
+                        <button
+                            @click="$emit('search')"
+                            class="shrink-0 px-4 py-3 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition disabled:opacity-50"
+                            :disabled="searchLoading"
+                        >
+                            {{ searchLoading ? '搜索中' : '搜索' }}
+                        </button>
+                    </div>
+                    <div v-if="searchResults.length" class="max-h-72 overflow-y-auto pr-1 space-y-2">
+                        <div
+                            v-for="item in searchResults"
+                            :key="item.bvid"
+                            class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2"
+                        >
+                            <div class="flex gap-3">
+                                <img :src="item.pic" :alt="item.title" class="w-20 h-12 rounded-xl object-cover bg-slate-200 shrink-0">
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-bold text-slate-800 line-clamp-2">{{ item.title }}</div>
+                                    <div v-if="item.author" class="mt-0.5 text-[11px] text-slate-600 font-semibold truncate">
+                                        UP主：{{ item.author }}
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        <span
+                                            v-for="tag in item.tags"
+                                            :key="tag"
+                                            class="px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-600 text-[10px] font-bold"
+                                        >
+                                            {{ tag }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                v-if="item.parts?.length <= 1"
+                                @click="$emit('select-result', item)"
+                                class="w-full px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition"
+                            >
+                                一键点歌
+                            </button>
+
+                            <div v-else class="space-y-2">
+                                <button
+                                    @click="$emit('toggle-parts', item.bvid)"
+                                    class="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 transition"
+                                >
+                                    {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts.length})` }}
+                                </button>
+                                <div v-if="expandedBvid === item.bvid" class="space-y-1">
+                                    <button
+                                        v-for="part in item.parts"
+                                        :key="`${item.bvid}-${part.page}`"
+                                        @click="$emit('select-part', { item, part })"
+                                        class="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition"
+                                    >
+                                        <div class="text-xs font-black text-indigo-500">P{{ part.page }}</div>
+                                        <div class="text-sm text-slate-700 font-semibold truncate">{{ part.part }}</div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="searchKeyword && !searchLoading" class="text-xs text-slate-400 px-1">
+                        暂无搜索结果
+                    </div>
+                </div>
+
+                <div class="space-y-1">
+                    <label class="modal-label">
                         智能提取 (粘贴B站分享文案)
                     </label>
                     <textarea :value="autoInput" @input="onAutoInput"
@@ -65,6 +147,13 @@ import ComfirmButton from './components/ComfirmButton.vue';
 const props = defineProps({
     modelValue: Boolean,          // 控制显隐
     isAddingToFavorites: Boolean, // 模式切换
+    searchKeyword: String,
+    searchLoading: Boolean,
+    searchResults: {
+        type: Array,
+        default: () => []
+    },
+    expandedBvid: String,
     autoInput: String,            // 自动输入的内容
     form: Object                  // 表单对象 {title, url}
 });
@@ -72,8 +161,13 @@ const props = defineProps({
 const emit = defineEmits([
     'update:modelValue',
     'update:isAddingToFavorites',
+    'update:searchKeyword',
     'update:autoInput',
     'update:form',
+    'search',
+    'toggle-parts',
+    'select-result',
+    'select-part',
     'auto-recognize',
     'submit'
 ]);

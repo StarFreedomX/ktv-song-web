@@ -5,7 +5,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { getHash, resolveBilibiliData, songListTools, songOperation } from "@/utils";
+import { getHash, resolveBilibiliData, searchBilibiliKtvVideos, songListTools, songOperation } from "@/utils";
 import { DATABASE_NAME, IdentifiedWebSocket, OpLog, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 export function runKTVServer(storage: Storage) {
@@ -438,6 +438,27 @@ export function runKTVServer(storage: Storage) {
         koaCtx.body = { success: true, link };
     });
 
+    router.get('/api/bilibiliSearch', async (koaCtx) => {
+        const { keyword: keywords } = koaCtx.query;
+        const keyword = Array.isArray(keywords) ? keywords.at(0) : keywords;
+        if (!keyword?.trim()) {
+            koaCtx.body = { success: true, items: [] };
+            return;
+        }
+
+        try {
+            const items = await searchBilibiliKtvVideos(keyword);
+            koaCtx.body = { success: true, items };
+        } catch (error) {
+            ktvLogger.error('Bilibili search failed', error);
+            koaCtx.status = 500;
+            koaCtx.body = {
+                success: false,
+                msg: error instanceof Error ? error.message : 'Bilibili search failed'
+            };
+        }
+    });
+
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
@@ -539,4 +560,3 @@ export function runKTVServer(storage: Storage) {
         }
     };
 }
-

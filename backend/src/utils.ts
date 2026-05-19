@@ -1,8 +1,201 @@
 import axios from "axios";
-import { DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
+import { BilibiliSearchVideo, BilibiliVideoPart, DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
 import ktvLogger from "@/logger";
 import * as crypto from 'crypto';
 import { Storage } from "@/storage";
+
+const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+const BILIBILI_REFERER = 'https://www.bilibili.com/';
+const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '投屏', 'ktv字幕'] as const;
+const WBI_MIXIN_KEY_ENC_TAB = [
+    46, 47, 18, 2, 53, 8, 23, 32,
+    15, 50, 10, 31, 58, 3, 45, 35,
+    27, 43, 5, 49, 33, 9, 42, 19,
+    29, 28, 14, 39, 12, 38, 41, 13,
+    37, 48, 7, 16, 24, 55, 40, 61,
+    26, 17, 0, 1, 60, 51, 30, 4,
+    22, 25, 54, 21, 56, 59, 6, 63,
+    57, 62, 11, 36, 20, 34, 44, 52
+] as const;
+
+type BiliSearchItem = {
+    bvid?: string
+    title?: string
+    pic?: string
+}
+
+function stripHtml(input: string) {
+    return (input || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim();
+}
+
+function normalizeBilibiliPic(pic?: string) {
+    if (!pic) return '';
+    if (pic.startsWith('//')) return `https:${pic}`;
+    if (pic.startsWith('http://') || pic.startsWith('https://')) return pic;
+    return `https://${pic.replace(/^\/+/, '')}`;
+}
+
+function getMixinKey(orig: string) {
+    return WBI_MIXIN_KEY_ENC_TAB.map(i => orig[i]).join('').slice(0, 32);
+}
+
+function encWbi(params: Record<string, string | number>, imgKey: string, subKey: string) {
+    const mixinKey = getMixinKey(imgKey + subKey);
+    const sanitizedParams = Object.fromEntries(
+        Object.entries({
+            ...params,
+            wts: Math.floor(Date.now() / 1000)
+        }).map(([key, value]) => [
+            key,
+            `${value}`.replace(/[!'()*]/g, '')
+        ])
+    );
+    const query = new URLSearchParams(
+        Object.entries(sanitizedParams).sort(([a], [b]) => a.localeCompare(b))
+    ).toString();
+    const wRid = crypto.createHash('md5').update(query + mixinKey).digest('hex');
+    return `${query}&w_rid=${wRid}`;
+}
+
+async function getBilibiliCookie() {
+    const response = await axios.get('https://www.bilibili.com/', {
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER
+        }
+    });
+    const setCookie = response.headers['set-cookie'];
+    if (!Array.isArray(setCookie) || setCookie.length === 0) {
+        return 'buvid3=codex-search';
+    }
+    const cookies = setCookie
+        .map(cookie => cookie.split(';')[0])
+        .filter(Boolean);
+    if (!cookies.some(cookie => cookie.startsWith('buvid3='))) {
+        cookies.push('buvid3=codex-search');
+    }
+    return cookies.join('; ');
+}
+
+async function getBilibiliWbiKeys(cookie: string) {
+    const response = await axios.get('https://api.bilibili.com/x/web-interface/nav', {
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER,
+            'Cookie': cookie
+        }
+    });
+    const wbiImg = response.data?.data?.wbi_img;
+    const imgKey = wbiImg?.img_url?.split('/').pop()?.split('.')[0];
+    const subKey = wbiImg?.sub_url?.split('/').pop()?.split('.')[0];
+    if (!imgKey || !subKey) {
+        throw new Error('Failed to get bilibili wbi keys');
+    }
+    return { imgKey, subKey };
+}
+
+async function searchBilibiliVideosByKeyword(keyword: string, cookie: string, imgKey: string, subKey: string) {
+    const headers = {
+        'User-Agent': BILIBILI_USER_AGENT,
+        'Referer': BILIBILI_REFERER,
+        'Cookie': cookie
+    };
+    try {
+        const legacyResponse = await axios.get('https://api.bilibili.com/x/web-interface/search/type', {
+            params: {
+                search_type: 'video',
+                keyword,
+                page: 1
+            },
+            headers
+        });
+        if (legacyResponse.data?.code === 0) {
+            return (legacyResponse.data?.data?.result || []) as BiliSearchItem[];
+        }
+    } catch (error) {
+        ktvLogger.warn('Bilibili legacy search failed', keyword, error instanceof Error ? error.message : error);
+    }
+
+    const query = encWbi({
+        search_type: 'video',
+        keyword,
+        page: 1
+    }, imgKey, subKey);
+    const url = `https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`;
+    const response = await axios.get(url, {
+        headers: {
+            ...headers
+        }
+    });
+    if (response.data?.code !== 0) {
+        throw new Error(`Bilibili search failed: ${response.data?.message || response.data?.code}`);
+    }
+    return (response.data?.data?.result || []) as BiliSearchItem[];
+}
+
+async function getBilibiliVideoParts(bvid: string) {
+    const response = await axios.get('https://api.bilibili.com/x/player/pagelist', {
+        params: { bvid },
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER
+        }
+    });
+    if (response.data?.code !== 0 || !Array.isArray(response.data?.data)) {
+        return [];
+    }
+    return response.data.data.map((item: any): BilibiliVideoPart => ({
+        page: item.page,
+        part: item.part || `P${item.page}`
+    }));
+}
+
+async function searchBilibiliKtvVideos(keyword: string) {
+    const trimmedKeyword = keyword.trim();
+    if (!trimmedKeyword) return [];
+
+    const cookie = await getBilibiliCookie();
+    const { imgKey, subKey } = await getBilibiliWbiKeys(cookie);
+    const mergedMap = new Map<string, BilibiliSearchVideo>();
+
+    await Promise.all(BILIBILI_TAGS.map(async (tag) => {
+        const searchKeyword = `${trimmedKeyword} ${tag}`;
+        try {
+            const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
+            results.slice(0, 8).forEach((item) => {
+                const bvid = item.bvid?.trim();
+                if (!bvid) return;
+                const current = mergedMap.get(bvid);
+                if (current) {
+                    if (!current.tags.includes(tag)) current.tags.push(tag);
+                    return;
+                }
+                mergedMap.set(bvid, {
+                    bvid,
+                    title: stripHtml(item.title || bvid),
+                    pic: normalizeBilibiliPic(item.pic),
+                    tags: [tag],
+                    parts: []
+                });
+            });
+        } catch (error) {
+            ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
+        }
+    }));
+
+    const mergedResults = [...mergedMap.values()].slice(0, 20);
+    await Promise.all(mergedResults.map(async (item) => {
+        try {
+            const parts = await getBilibiliVideoParts(item.bvid);
+            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
+        } catch (error) {
+            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
+            item.parts = [{ page: 1, part: item.title }];
+        }
+    }));
+
+    return mergedResults;
+}
 
 /**
  * 解析 B23.TV 短链接并提取 BV 号
@@ -354,4 +547,4 @@ const songListTools = {
     })
 }
 
-export { resolveBilibiliData, songOperation, getHash, songListTools };
+export { resolveBilibiliData, searchBilibiliKtvVideos, songOperation, getHash, songListTools };
