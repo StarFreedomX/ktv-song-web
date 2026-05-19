@@ -3,7 +3,7 @@
         <div v-if="modelValue"
              class="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
              @click.self="handleClose">
-            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4">
+            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 flex flex-col max-h-[90dvh]">
                 <div class="flex items-center justify-between px-2">
                     <h3 class="text-xl font-black text-slate-800">
                         {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
@@ -14,6 +14,7 @@
                     </button>
                 </div>
 
+                <div class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
                 <div class="space-y-1">
                     <label class="modal-label">
                         Bilibili KTV 搜索
@@ -118,8 +119,9 @@
                            class="modal-input"
                            placeholder="跳转链接">
                 </div>
+                </div>
 
-                <div class="flex gap-3 pt-2">
+                <div class="flex gap-3 pt-4 flex-shrink-0">
                     <ComfirmButton
                         type="secondary"
                         class="flex-1"
