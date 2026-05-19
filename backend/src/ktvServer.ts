@@ -9,6 +9,35 @@ import { Storage } from "@/storage";
 import { filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
+const DURATION_MULTIPLIERS = {
+    ms: 1,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+} as const;
+
+function parseDurationMs(value: string | undefined, fallback: number) {
+    if (!value) return fallback;
+
+    const normalizedValue = value.trim().toLowerCase();
+    if (!normalizedValue) return fallback;
+
+    const durationMatch = normalizedValue.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/);
+    if (durationMatch) {
+        const amount = Number(durationMatch[1]);
+        const unit = (durationMatch[2] || 'ms') as keyof typeof DURATION_MULTIPLIERS;
+        const multiplier = DURATION_MULTIPLIERS[unit];
+        if (Number.isFinite(amount) && amount > 0 && multiplier) {
+            return Math.round(amount * multiplier);
+        }
+        return fallback;
+    }
+
+    const numericValue = Number(normalizedValue);
+    return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
+}
+
 export function runKTVServer(storage: Storage) {
     const app = websockify(new Koa());
     const router = new Router();
@@ -22,11 +51,11 @@ export function runKTVServer(storage: Storage) {
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
-    const CACHE_EXPIRE_TIME = Number(process.env.CACHE_DATA_EXPIRE_TIME) || DEFAULT_CACHE_DATA_EXPIRE_TIME;
-    const CACHE_OP_EXPIRE_TIME = Number(process.env.CACHE_OP_EXPIRE_TIME) || DEFAULT_CACHE_OP_EXPIRE_TIME;
-    const SEARCH_CACHE_EXPIRE_TIME = Number(process.env.SEARCH_CACHE_EXPIRE_TIME) || DEFAULT_SEARCH_CACHE_EXPIRE_TIME;
-    const SEARCH_CATALOG_EXPIRE_TIME = Number(process.env.SEARCH_CATALOG_EXPIRE_TIME) || DEFAULT_SEARCH_CATALOG_EXPIRE_TIME;
-    const IMAGE_CACHE_EXPIRE_TIME = Number(process.env.IMAGE_CACHE_EXPIRE_TIME) || DEFAULT_IMAGE_CACHE_EXPIRE_TIME;
+    const CACHE_EXPIRE_TIME = parseDurationMs(process.env.CACHE_DATA_EXPIRE_TIME, DEFAULT_CACHE_DATA_EXPIRE_TIME);
+    const CACHE_OP_EXPIRE_TIME = parseDurationMs(process.env.CACHE_OP_EXPIRE_TIME, DEFAULT_CACHE_OP_EXPIRE_TIME);
+    const SEARCH_CACHE_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CACHE_EXPIRE_TIME, DEFAULT_SEARCH_CACHE_EXPIRE_TIME);
+    const SEARCH_CATALOG_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CATALOG_EXPIRE_TIME, DEFAULT_SEARCH_CATALOG_EXPIRE_TIME);
+    const IMAGE_CACHE_EXPIRE_TIME = parseDurationMs(process.env.IMAGE_CACHE_EXPIRE_TIME, DEFAULT_IMAGE_CACHE_EXPIRE_TIME);
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
