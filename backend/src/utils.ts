@@ -6,18 +6,18 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
-const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '投屏', 'ktv'] as const;
+const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '纯k自用', '卡拉OK'] as const;
 const BILIBILI_TAG_PRIORITY: Record<string, number> = {
     'ニコカラ': 0,
     'カラオケ': 1,
-    '投屏': 2,
-    'ktv': 3
+    '纯k自用': 2,
+    '卡拉OK': 3
 };
 const BILIBILI_TAG_MATCHERS: Record<(typeof BILIBILI_TAGS)[number], RegExp> = {
     'ニコカラ': /(ニコカラ|nicokara)/i,
     'カラオケ': /(カラオケ|karaoke)/i,
-    '投屏': /(投屏)/i,
-    'ktv': /(ktv)/i
+    '纯k自用': /(纯k自用)/i,
+    '卡拉OK': /(卡拉OK|ktv字幕)/i
 };
 const WBI_MIXIN_KEY_ENC_TAB = [
     46, 47, 18, 2, 53, 8, 23, 32,
