@@ -406,6 +406,18 @@ const searchBilibiliSongs = async () => {
     }
 };
 
+const trackBilibiliSelection = async (item) => {
+    try {
+        await fetch('api/bilibiliSearch/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bvid: item.bvid })
+        });
+    } catch (e) {
+        console.error('Track Bilibili Selection Error:', e);
+    }
+};
+
 const getBilibiliSongUrl = (bvid, page) => {
     if (!page || page <= 1) return `bilibili://video/${bvid}`;
     return `bilibili://video/${bvid}?page=${page - 1}`;
@@ -417,6 +429,7 @@ const buildBilibiliSongTitle = (item, part) => {
 };
 
 const addBilibiliSearchResult = async (item) => {
+    trackBilibiliSelection(item);
     const part = item.parts?.[0] || null;
     await enqueueSong({
         title: buildBilibiliSongTitle(item, part),
@@ -425,6 +438,7 @@ const addBilibiliSearchResult = async (item) => {
 };
 
 const addBilibiliPart = async ({ item, part }) => {
+    trackBilibiliSelection(item);
     await enqueueSong({
         title: buildBilibiliSongTitle(item, part),
         url: getBilibiliSongUrl(item.bvid, part.page)

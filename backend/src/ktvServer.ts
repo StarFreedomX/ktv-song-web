@@ -1,12 +1,13 @@
 import process from "node:process";
+import axios from "axios";
 import ktvLogger from "@/logger";
 import Koa from "koa";
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { getHash, resolveBilibiliData, searchBilibiliKtvVideos, songListTools, songOperation } from "@/utils";
-import { DATABASE_NAME, IdentifiedWebSocket, OpLog, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
+import { getHash, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 export function runKTVServer(storage: Storage) {
     const app = websockify(new Koa());
@@ -15,15 +16,43 @@ export function runKTVServer(storage: Storage) {
 
     const DEFAULT_CACHE_DATA_EXPIRE_TIME = 24 * 60 * 60 * 1000;
     const DEFAULT_CACHE_OP_EXPIRE_TIME = 5 * 60 * 1000;
+    const DEFAULT_SEARCH_CACHE_EXPIRE_TIME = 6 * 60 * 60 * 1000;
+    const DEFAULT_IMAGE_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
     const CACHE_EXPIRE_TIME = Number(process.env.CACHE_DATA_EXPIRE_TIME) || DEFAULT_CACHE_DATA_EXPIRE_TIME;
     const CACHE_OP_EXPIRE_TIME = Number(process.env.CACHE_OP_EXPIRE_TIME) || DEFAULT_CACHE_OP_EXPIRE_TIME;
+    const SEARCH_CACHE_EXPIRE_TIME = Number(process.env.SEARCH_CACHE_EXPIRE_TIME) || DEFAULT_SEARCH_CACHE_EXPIRE_TIME;
+    const IMAGE_CACHE_EXPIRE_TIME = Number(process.env.IMAGE_CACHE_EXPIRE_TIME) || DEFAULT_IMAGE_CACHE_EXPIRE_TIME;
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
     const roomSongsCache: Record<string, SongLists> = {}
+    const imageCache = new Map<string, {
+        buffer: Buffer,
+        contentType: string,
+        expireAt: number
+    }>();
+
+    const getSearchCacheKey = (keyword: string) => keyword.trim().toLowerCase();
+    const getImageProxyUrl = (url: string) => `/api/bilibiliImage?url=${encodeURIComponent(url)}`;
+
+    const getSearchClickCounts = async (items: BilibiliSearchVideo[]) => {
+        const counts: Record<string, number> = {};
+        await Promise.all(items.map(async (item) => {
+            const count = await storage.get<number>(SEARCH_CLICK_NAMESPACE, item.bvid);
+            counts[item.bvid] = Number(count) || 0;
+        }));
+        return counts;
+    };
+
+    const withProxyImage = (items: BilibiliSearchVideo[]) => {
+        return items.map(item => ({
+            ...item,
+            pic: item.pic ? getImageProxyUrl(item.pic) : ''
+        }));
+    };
 
     // 检测并清理缓存
     const cacheCleanupTimer = setInterval(() => {
@@ -33,6 +62,11 @@ export function runKTVServer(storage: Storage) {
             if (!roomOpCache[roomId]?.length) {
                 delete roomOpCache[roomId];
                 delete roomSongsCache[roomId];
+            }
+        }
+        for (const [url, cached] of imageCache.entries()) {
+            if (cached.expireAt <= now) {
+                imageCache.delete(url);
             }
         }
     }, CACHE_OP_EXPIRE_TIME);
@@ -447,8 +481,16 @@ export function runKTVServer(storage: Storage) {
         }
 
         try {
-            const items = await searchBilibiliKtvVideos(keyword);
-            koaCtx.body = { success: true, items };
+            const cacheKey = getSearchCacheKey(keyword);
+            let items = await storage.get<BilibiliSearchVideo[]>(SEARCH_CACHE_NAMESPACE, cacheKey);
+            if (!items?.length) {
+                items = await searchBilibiliKtvVideos(keyword);
+                await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, items, SEARCH_CACHE_EXPIRE_TIME);
+            }
+
+            const clickCounts = await getSearchClickCounts(items);
+            const sortedItems = sortBilibiliSearchVideos(items, clickCounts);
+            koaCtx.body = { success: true, items: withProxyImage(sortedItems) };
         } catch (error) {
             ktvLogger.error('Bilibili search failed', error);
             koaCtx.status = 500;
@@ -456,6 +498,75 @@ export function runKTVServer(storage: Storage) {
                 success: false,
                 msg: error instanceof Error ? error.message : 'Bilibili search failed'
             };
+        }
+    });
+
+    router.post('/api/bilibiliSearch/select', async (koaCtx) => {
+        const { bvid } = koaCtx.request.body as { bvid?: string };
+        if (!bvid) {
+            koaCtx.body = { success: false, msg: 'Missing bvid' };
+            return;
+        }
+
+        const count = (await storage.get<number>(SEARCH_CLICK_NAMESPACE, bvid)) || 0;
+        await storage.set(SEARCH_CLICK_NAMESPACE, bvid, count + 1, 365 * 24 * 60 * 60 * 1000);
+        koaCtx.body = { success: true };
+    });
+
+    router.get('/api/bilibiliImage', async (koaCtx) => {
+        const { url: urls } = koaCtx.query;
+        const imageUrl = Array.isArray(urls) ? urls.at(0) : urls;
+        if (!imageUrl) {
+            koaCtx.status = 400;
+            koaCtx.body = 'Missing url';
+            return;
+        }
+
+        let parsedUrl: URL;
+        try {
+            parsedUrl = new URL(imageUrl);
+        } catch {
+            koaCtx.status = 400;
+            koaCtx.body = 'Invalid url';
+            return;
+        }
+
+        if (!parsedUrl.hostname.endsWith('hdslb.com')) {
+            koaCtx.status = 403;
+            koaCtx.body = 'Forbidden host';
+            return;
+        }
+
+        const cached = imageCache.get(imageUrl);
+        if (cached && cached.expireAt > Date.now()) {
+            koaCtx.set('Content-Type', cached.contentType);
+            koaCtx.set('Cache-Control', 'public, max-age=86400');
+            koaCtx.body = cached.buffer;
+            return;
+        }
+
+        try {
+            const response = await axios.get<ArrayBuffer>(imageUrl, {
+                responseType: 'arraybuffer',
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
+                    'Referer': 'https://www.bilibili.com/'
+                }
+            });
+            const buffer = Buffer.from(response.data);
+            const contentType = response.headers['content-type'] || 'image/jpeg';
+            imageCache.set(imageUrl, {
+                buffer,
+                contentType,
+                expireAt: Date.now() + IMAGE_CACHE_EXPIRE_TIME
+            });
+            koaCtx.set('Content-Type', contentType);
+            koaCtx.set('Cache-Control', 'public, max-age=86400');
+            koaCtx.body = buffer;
+        } catch (error) {
+            ktvLogger.warn('Bilibili image proxy failed', imageUrl, error instanceof Error ? error.message : error);
+            koaCtx.status = 502;
+            koaCtx.body = 'Image fetch failed';
         }
     });
 

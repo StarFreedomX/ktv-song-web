@@ -7,6 +7,12 @@ import { Storage } from "@/storage";
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
 const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '投屏', 'ktv字幕'] as const;
+const BILIBILI_TAG_PRIORITY: Record<string, number> = {
+    'ニコカラ': 0,
+    'カラオケ': 1,
+    '投屏': 2,
+    'ktv字幕': 3
+};
 const WBI_MIXIN_KEY_ENC_TAB = [
     46, 47, 18, 2, 53, 8, 23, 32,
     15, 50, 10, 31, 58, 3, 45, 35,
@@ -195,6 +201,21 @@ async function searchBilibiliKtvVideos(keyword: string) {
     }));
 
     return mergedResults;
+}
+
+function sortBilibiliSearchVideos(items: BilibiliSearchVideo[], clickCounts: Record<string, number> = {}) {
+    return [...items].sort((a, b) => {
+        const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        const aClicks = clickCounts[a.bvid] || 0;
+        const bClicks = clickCounts[b.bvid] || 0;
+        if (aClicks !== bClicks) return bClicks - aClicks;
+
+        if (a.tags.length !== b.tags.length) return b.tags.length - a.tags.length;
+        return a.title.localeCompare(b.title, 'zh-Hans-CN');
+    });
 }
 
 /**
@@ -547,4 +568,4 @@ const songListTools = {
     })
 }
 
-export { resolveBilibiliData, searchBilibiliKtvVideos, songOperation, getHash, songListTools };
+export { resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songOperation, getHash, songListTools };
