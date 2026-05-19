@@ -233,7 +233,17 @@ function sortBilibiliSearchVideos(
         // Relevance-first: prevent "just has ニコカラ" results from outranking the actual song name.
         const aScore = normalizedKeyword ? scoreBilibiliSearchVideo(a, keyword) : 0;
         const bScore = normalizedKeyword ? scoreBilibiliSearchVideo(b, keyword) : 0;
-        if (aScore !== bScore) return bScore - aScore;
+        if (aScore !== bScore) {
+            // If both are similarly relevant, prefer items that are explicitly tagged as karaoke-like.
+            // This avoids "normal MV/字幕版" beating a karaoke upload by a small score margin.
+            const scoreGap = Math.abs(aScore - bScore);
+            if (scoreGap <= 60) {
+                const aHasPreferredTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+                const bHasPreferredTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+                if (aHasPreferredTag !== bHasPreferredTag) return aHasPreferredTag ? -1 : 1;
+            }
+            return bScore - aScore;
+        }
 
         const aClicks = clickCounts[a.bvid] || 0;
         const bClicks = clickCounts[b.bvid] || 0;
