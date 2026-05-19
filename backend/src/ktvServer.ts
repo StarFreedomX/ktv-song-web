@@ -56,6 +56,7 @@ export function runKTVServer(storage: Storage) {
     const SEARCH_CACHE_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CACHE_EXPIRE_TIME, DEFAULT_SEARCH_CACHE_EXPIRE_TIME);
     const SEARCH_CATALOG_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CATALOG_EXPIRE_TIME, DEFAULT_SEARCH_CATALOG_EXPIRE_TIME);
     const IMAGE_CACHE_EXPIRE_TIME = parseDurationMs(process.env.IMAGE_CACHE_EXPIRE_TIME, DEFAULT_IMAGE_CACHE_EXPIRE_TIME);
+    const ENABLE_BILIBILI_IMAGE_PROXY = process.env.ENABLE_BILIBILI_IMAGE_PROXY === 'true';
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
@@ -90,7 +91,7 @@ export function runKTVServer(storage: Storage) {
     const attachProxyImage = (items: BilibiliSearchVideo[]) => {
         return items.map(item => ({
             ...item,
-            picProxy: item.pic ? getImageProxyUrl(item.pic) : ''
+            picProxy: ENABLE_BILIBILI_IMAGE_PROXY && item.pic ? getImageProxyUrl(item.pic) : undefined
         }));
     };
 
