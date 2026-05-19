@@ -9,6 +9,7 @@ import JumpConfirmModal from "./modals/JumpConfirmModal.vue";
 import DeleteConfirmModal from "./modals/DeleteConfirmModal.vue";
 import EditSongModal from "./modals/EditSongModal.vue";
 import AddSongModal from "./modals/AddSongModal.vue";
+import BilibiliSearchModal from "./modals/BilibiliSearchModal.vue";
 import NicknameModal from "./modals/NicknameModal.vue";
 import BottomNav from "./modals/BottomNav.vue";
 import QueueList from "./modals/QueueList.vue";
@@ -80,6 +81,7 @@ const showNicknameModal = ref(false);
 const showShuffleConfirm = ref(false);
 const showSettings = ref(false);
 const showAddModal = ref(false);
+const showBiliSearchModal = ref(false);
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -115,7 +117,8 @@ const {
     handleAutoRecognize,
     executeJump,
     backHome,
-    getLISIndices
+    getLISIndices,
+    normalizeBilibiliTitle
 } = initUtils(lastHash);
 
 // 辅助函数：显示瞬时状态并恢复
@@ -403,6 +406,7 @@ const searchBilibiliSongs = async () => {
     try {
         const res = await fetch(`api/bilibiliSearch?keyword=${encodeURIComponent(keyword)}`).then(r => r.json());
         biliSearchResults.value = res.success ? (res.items || []) : [];
+        if (biliSearchResults.value.length) showBiliSearchModal.value = true;
     } catch (e) {
         console.error('Bilibili Search Error:', e);
         biliSearchResults.value = [];
@@ -424,8 +428,8 @@ const trackBilibiliSelection = async (item) => {
 };
 
 const getBilibiliSongUrl = (bvid, page) => {
-    if (!page || page <= 1) return `bilibili://video/${bvid}`;
-    return `bilibili://video/${bvid}?page=${page - 1}`;
+    if (!page || page <= 1) return `bilibili://video/${bvid}?page=1`;
+    return `bilibili://video/${bvid}?page=${page}`;
 };
 
 const buildBilibiliSongTitle = (item, part) => {
@@ -436,17 +440,23 @@ const buildBilibiliSongTitle = (item, part) => {
 const addBilibiliSearchResult = async (item) => {
     const part = item.parts?.[0] || null;
     await enqueueSong({
-        title: buildBilibiliSongTitle(item, part),
+        title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
         url: getBilibiliSongUrl(item.bvid, part?.page || 1),
-        onSuccess: () => trackBilibiliSelection(item)
+        onSuccess: async () => {
+            await trackBilibiliSelection(item);
+            showBiliSearchModal.value = false;
+        }
     });
 };
 
 const addBilibiliPart = async ({ item, part }) => {
     await enqueueSong({
-        title: buildBilibiliSongTitle(item, part),
+        title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
         url: getBilibiliSongUrl(item.bvid, part.page),
-        onSuccess: () => trackBilibiliSelection(item)
+        onSuccess: async () => {
+            await trackBilibiliSelection(item);
+            showBiliSearchModal.value = false;
+        }
     });
 };
 
@@ -1020,6 +1030,18 @@ onUnmounted(() => {
         @select-result="addBilibiliSearchResult"
         @select-part="addBilibiliPart"
         @submit="handleAdd"
+    />
+
+    <BilibiliSearchModal
+        v-model="showBiliSearchModal"
+        v-model:searchKeyword="biliSearchKeyword"
+        :search-loading="biliSearchLoading"
+        :search-results="biliSearchResults"
+        :expanded-bvid="expandedBvid"
+        @search="searchBilibiliSongs"
+        @toggle-parts="toggleBilibiliParts"
+        @select-result="addBilibiliSearchResult"
+        @select-part="addBilibiliPart"
     />
 
     <EditSongModal

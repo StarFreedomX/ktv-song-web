@@ -2,6 +2,70 @@ import { sha256 } from "js-sha256";
 
 export function initUtils(lastHash){
 
+    const normalizeBilibiliTitle = (rawTitle) => {
+        let title = (rawTitle || "").trim();
+        if (!title) return '';
+
+        // "-哔哩哔哩" 的最外层括号
+        // 【内容-哔哩哔哩】 -> 内容
+        title = title.replace(/[【](.*)-哔哩哔哩[】]/i, '$1');
+        // 如果没被括号包住，也直接删掉后缀
+        title = title.replace(/-哔哩哔哩/i, '');
+
+        const blacklist = /(ニコカラ|on[ /]?vocal|off[ /]?vocal|on\/off vocal|假名|字幕|罗马音|和声伴奏|纯k投屏|自用|完整版MV|KTV字幕|KTV|Karaoke|搬运|カラオケ|nicokara|卡拉OK|歌词|分唱)/gi;
+
+        function cleanTitleNested(inputTitle) {
+            const brackets = { '】': '【', ']': '[', ')': '(', '）': '（', '』': '『', '」': '「' };
+            const leftBrackets = Object.values(brackets);
+
+            let chars = (inputTitle || '').split('');
+            let stack = [];
+            for (let i = 0; i < chars.length; i++) {
+                let char = chars[i];
+
+                if (leftBrackets.includes(char)) {
+                    stack.push({ type: char, index: i });
+                } else if (brackets[char]) {
+                    let lastMatchIdx = -1;
+                    for (let j = stack.length - 1; j >= 0; j--) {
+                        if (stack[j].type === brackets[char]) {
+                            lastMatchIdx = j;
+                            break;
+                        }
+                    }
+
+                    if (lastMatchIdx !== -1) {
+                        let left = stack.splice(lastMatchIdx, 1)[0];
+                        let start = left.index;
+                        let end = i;
+
+                        let currentContent = chars.slice(start, end + 1).join('');
+
+                        blacklist.lastIndex = 0;
+                        if (blacklist.test(currentContent)) {
+                            for (let k = start; k <= end; k++) {
+                                chars[k] = "";
+                            }
+                        }
+                    }
+                }
+            }
+
+            let result = chars.join('');
+
+            const emptyBrackets = /(\(\s*\)|\[\s*]|【\s*】|（\s*）|『\s*』|「\s*」)/g;
+            while (emptyBrackets.test(result)) {
+                result = result.replace(emptyBrackets, '');
+            }
+
+            return result.replace(/\s+/g, ' ').trim();
+        }
+
+        title = cleanTitleNested(title);
+        title = title.replace(blacklist, "");
+        return title.replace(/\s+/g, ' ').trim();
+    };
+
     async function getHash(songLists) {
         // Only support the new SongLists shape: { queued: [], singing: null, sung: [] }
         if (!songLists || typeof songLists !== 'object') return "EMPTY_LIST_HASH";
@@ -68,86 +132,13 @@ export function initUtils(lastHash){
         if (urlMatch) form.url = urlMatch[0];
 
         // 初始清理：只去掉链接，保留所有文字和括号
-        let title = raw.replace(/https?:\/\/\S+/g, '').trim();
-
-        // "-哔哩哔哩" 的最外层括号
-        // 【内容-哔哩哔哩】 -> 内容
-        title = title.replace(/[【](.*)-哔哩哔哩[】]/i, '$1');
-        // 如果没被括号包住，也直接删掉后缀
-        title = title.replace(/-哔哩哔哩/i, '');
-
-        const blacklist = /(ニコカラ|on[ /]?vocal|off[ /]?vocal|on\/off vocal|假名|字幕|罗马音|和声伴奏|纯k投屏|自用|完整版MV|KTV字幕|KTV|Karaoke|搬运|カラオケ|nicokara|卡拉OK|歌词|分唱)/gi;
-
-        function cleanTitleNested(title) {
-
-            const brackets = { '】': '【', ']': '[', ')': '(', '）': '（', '』': '『', '」': '「' };
-            const leftBrackets = Object.values(brackets);
-
-            // 使用数组操作，方便根据索引标记删除
-            let chars = title.split('');
-
-            let stack = [];
-            for (let i = 0; i < chars.length; i++) {
-                let char = chars[i];
-
-                if (leftBrackets.includes(char)) {
-                    stack.push({ type: char, index: i });
-                } else if (brackets[char]) {
-                    // 查找栈中最近的匹配左括号
-                    let lastMatchIdx = -1;
-                    for (let j = stack.length - 1; j >= 0; j--) {
-                        if (stack[j].type === brackets[char]) {
-                            lastMatchIdx = j;
-                            break;
-                        }
-                    }
-
-                    if (lastMatchIdx !== -1) {
-                        let left = stack.splice(lastMatchIdx, 1)[0];
-                        let start = left.index;
-                        let end = i;
-
-                        // 提取当前层级的内容进行检测
-                        // 注意：这里需要拿 chars 里的实时内容，如果子层被删了，子层位置会是空字符
-                        let currentContent = chars.slice(start, end + 1).join('');
-
-                        blacklist.lastIndex = 0;
-                        if (blacklist.test(currentContent)) {
-                            // 命中黑名单，将 chars 数组对应区间全部置为空字符串
-                            for (let k = start; k <= end; k++) {
-                                chars[k] = "";
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 合并结果，并清理多余空格
-            let result = chars.join('');
-
-            // 清理“空括号”：匹配任何类型的左括号 + 0或多个空格 + 匹配的右括号
-            // 这里的正则涵盖了：(), [], {}, 【】, （）, 『』, 「」
-            const emptyBrackets = /(\(\s*\)|\[\s*]|【\s*】|（\s*）|『\s*』|「\s*」)/g;
-
-            // 循环清理，防止出现 [【】] 这种嵌套空括号清理不干净的情况
-            while (emptyBrackets.test(result)) {
-                result = result.replace(emptyBrackets, '');
-            }
-
-            // 最后清理多余空格并返回
-            return result.replace(/\s+/g, ' ').trim();
-        }
-
-        title = cleanTitleNested(title);
-
-        // 6. 清理残留在括号外的游离标签
-        title = title.replace(blacklist, "");
-        form.title = title;
+        const titleWithoutLink = raw.replace(/https?:\/\/\S+/g, '').trim();
+        form.title = normalizeBilibiliTitle(titleWithoutLink);
     };
 
     const executeJump = (url, jumpMode) => {
         // 尝试从已有的 URL 中提取 page 参数和 BV 号
-        // 此时的 url 可能是后端传来的 bilibili://video/BVxxx?page=1
+        // 此时的 url 可能是前端生成或后端解析出来的 bilibili://video/BVxxx?page=1
         let bvId = null;
         let pageIdx = null;
 
@@ -172,9 +163,8 @@ export function initUtils(lastHash){
         } else {
             // --- Web ---
             if (bvId) {
-                // H5 端的分 P 参数通常是 p=(page+1)
-                // 这里的处理是为了让 Web 端也能跳到对应的分 P
-                const pForWeb = pageIdx ? parseInt(pageIdx) + 1 : null;
+                // H5 端的分 P 参数通常是 p=page (从 1 开始编号)
+                const pForWeb = pageIdx ? parseInt(pageIdx) : null;
                 // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
                 const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;
                 window.open(webUrl, '_blank');
@@ -207,7 +197,8 @@ export function initUtils(lastHash){
                 v = result.length - 1;
                 while (u < v) {
                     c = (u + v) >> 1;
-                    if (arr[result[c]] < arrI) u = c + 1; else v = c;
+                    if (arr[result[c]] < arrI) u = c + 1;
+                    else v = c;
                 }
                 if (arrI < arr[result[u]]) {
                     if (u > 0) p[i] = result[u - 1];
@@ -224,5 +215,13 @@ export function initUtils(lastHash){
         return result;
     }
 
-    return { getHash, parseBilibiliShortLink, handleAutoRecognize, executeJump, backHome, getLISIndices };
+    return {
+        getHash,
+        parseBilibiliShortLink,
+        handleAutoRecognize,
+        executeJump,
+        backHome,
+        getLISIndices,
+        normalizeBilibiliTitle
+    };
 }

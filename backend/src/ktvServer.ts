@@ -6,7 +6,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 const DURATION_MULTIPLIERS = {
@@ -532,6 +532,7 @@ export function runKTVServer(storage: Storage) {
                 let remoteOrExact = await storage.get<BilibiliSearchVideo[]>(SEARCH_CACHE_NAMESPACE, cacheKey);
                 if (!remoteOrExact?.length) {
                     remoteOrExact = await searchBilibiliKtvVideos(keyword);
+                    remoteOrExact = filterBilibiliSearchVideosByRelevance(remoteOrExact, keyword);
                     await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, remoteOrExact, SEARCH_CACHE_EXPIRE_TIME);
                 }
 
@@ -540,12 +541,12 @@ export function runKTVServer(storage: Storage) {
 
                 const mergedClickCounts = await getSearchClickCounts(mergedCatalog);
                 const refreshedLocalMatches = filterCachedBilibiliSearchVideos(mergedCatalog, keyword, mergedClickCounts);
-                const remoteSorted = sortBilibiliSearchVideos(remoteOrExact, mergedClickCounts);
+                const remoteSorted = sortBilibiliSearchVideos(remoteOrExact, keyword, mergedClickCounts);
                 items = mergeBilibiliSearchVideos(refreshedLocalMatches, remoteSorted).slice(0, 20);
             }
 
             const clickCounts = await getSearchClickCounts(items);
-            const sortedItems = sortBilibiliSearchVideos(items, clickCounts);
+            const sortedItems = sortBilibiliSearchVideos(items, keyword, clickCounts);
             koaCtx.body = {
                 success: true,
                 keyword: normalizeSearchText(keyword),

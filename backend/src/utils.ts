@@ -13,6 +13,12 @@ const BILIBILI_TAG_PRIORITY: Record<string, number> = {
     '投屏': 2,
     'ktv': 3
 };
+const BILIBILI_TAG_MATCHERS: Record<(typeof BILIBILI_TAGS)[number], RegExp> = {
+    'ニコカラ': /(ニコカラ|nicokara)/i,
+    'カラオケ': /(カラオケ|karaoke)/i,
+    '投屏': /(投屏)/i,
+    'ktv': /(ktv)/i
+};
 const WBI_MIXIN_KEY_ENC_TAB = [
     46, 47, 18, 2, 53, 8, 23, 32,
     15, 50, 10, 31, 58, 3, 45, 35,
@@ -28,6 +34,7 @@ type BiliSearchItem = {
     bvid?: string
     title?: string
     pic?: string
+    author?: string
 }
 
 function stripHtml(input: string) {
@@ -179,14 +186,19 @@ async function searchBilibiliKtvVideos(keyword: string) {
                 if (!bvid) return;
                 const current = mergedMap.get(bvid);
                 if (current) {
-                    if (!current.tags.includes(tag)) current.tags.push(tag);
+                    const titleText = stripHtml(item.title || current.title || '');
+                    const matcher = BILIBILI_TAG_MATCHERS[tag];
+                    if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
                     return;
                 }
+                const titleText = stripHtml(item.title || bvid);
+                const detectedTags = BILIBILI_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
                 mergedMap.set(bvid, {
                     bvid,
-                    title: stripHtml(item.title || bvid),
+                    title: titleText,
                     pic: normalizeBilibiliPic(item.pic),
-                    tags: [tag],
+                    author: stripHtml(item.author || ''),
+                    tags: detectedTags.length ? [...detectedTags] : [tag],
                     parts: []
                 });
             });
@@ -209,15 +221,26 @@ async function searchBilibiliKtvVideos(keyword: string) {
     return mergedResults;
 }
 
-function sortBilibiliSearchVideos(items: BilibiliSearchVideo[], clickCounts: Record<string, number> = {}) {
+function sortBilibiliSearchVideos(
+    items: BilibiliSearchVideo[],
+    keyword: string,
+    clickCounts: Record<string, number> = {}
+) {
+    const normalizedKeyword = normalizeSearchText(keyword);
     return [...items].sort((a, b) => {
-        const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
-        const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
-        if (aPriority !== bPriority) return aPriority - bPriority;
+        // Relevance-first: prevent "just has ニコカラ" results from outranking the actual song name.
+        const aScore = normalizedKeyword ? scoreBilibiliSearchVideo(a, keyword) : 0;
+        const bScore = normalizedKeyword ? scoreBilibiliSearchVideo(b, keyword) : 0;
+        if (aScore !== bScore) return bScore - aScore;
 
         const aClicks = clickCounts[a.bvid] || 0;
         const bClicks = clickCounts[b.bvid] || 0;
         if (aClicks !== bClicks) return bClicks - aClicks;
+
+        // Then use tag priority as a tiebreaker.
+        const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        if (aPriority !== bPriority) return aPriority - bPriority;
 
         if (a.tags.length !== b.tags.length) return b.tags.length - a.tags.length;
         return a.title.localeCompare(b.title, 'zh-Hans-CN');
@@ -233,18 +256,45 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
     const partsText = normalizeSearchText(item.parts.map(part => part.part).join(' '));
     const haystack = `${titleText} ${tagsText} ${partsText}`;
 
-    if (!haystack.includes(normalizedKeyword)) return 0;
+    // Token-based relevance: tolerate minor wording differences (e.g. "de" vs "der").
+    // Only use title/parts for relevance; tags are too noisy for matching.
+    const normalizedTitleParts = `${titleText} ${partsText}`.trim();
+    if (!normalizedTitleParts) return 0;
+
+    const tokens = (keyword || '')
+        .toLowerCase()
+        .split(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;]+/g)
+        .map(t => normalizeSearchText(t))
+        .filter(t => t.length >= 3);
+
+    if (tokens.length === 0) {
+        if (!normalizedTitleParts.includes(normalizedKeyword)) return 0;
+    } else {
+        const hitCount = tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0);
+        if (hitCount === 0) return 0;
+    }
 
     let score = 10;
     if (titleText === normalizedKeyword) score += 200;
     if (titleText.includes(normalizedKeyword)) score += 120;
     if (partsText.includes(normalizedKeyword)) score += 50;
-    if (tagsText.includes(normalizedKeyword)) score += 30;
+    // tagsText intentionally excluded from matching; keep as small bonus only if keyword fully matches.
+    if (tagsText.includes(normalizedKeyword)) score += 10;
 
     const firstIndex = haystack.indexOf(normalizedKeyword);
     if (firstIndex >= 0) score += Math.max(0, 40 - firstIndex);
     score += Math.max(0, 20 - Math.max(0, item.title.length - keyword.length));
+
+    // Token hits: reward each token matched in title/parts.
+    if (tokens.length) {
+        const tokenHits = tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0);
+        score += tokenHits * 35;
+    }
     return score;
+}
+
+function filterBilibiliSearchVideosByRelevance(items: BilibiliSearchVideo[], keyword: string) {
+    return items.filter(item => scoreBilibiliSearchVideo(item, keyword) > 0);
 }
 
 function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
@@ -262,6 +312,7 @@ function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: Bi
 
         current.title = current.title || item.title;
         current.pic = current.pic || item.pic;
+        current.author = current.author || item.author;
         current.tags = [...new Set([...current.tags, ...item.tags])];
         const partMap = new Map(current.parts.map(part => [part.page, part]));
         item.parts.forEach(part => {
@@ -642,6 +693,7 @@ const songListTools = {
 
 export {
     filterCachedBilibiliSearchVideos,
+    filterBilibiliSearchVideosByRelevance,
     mergeBilibiliSearchVideos,
     normalizeSearchText,
     resolveBilibiliData,
