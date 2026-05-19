@@ -428,8 +428,9 @@ const trackBilibiliSelection = async (item) => {
 };
 
 const getBilibiliSongUrl = (bvid, page) => {
-    if (!page || page <= 1) return `bilibili://video/${bvid}?page=1`;
-    return `bilibili://video/${bvid}?page=${page}`;
+    // Bilibili App deep link uses `p` (1-based) for 分P.
+    if (!page || page <= 1) return `bilibili://video/${bvid}?p=1`;
+    return `bilibili://video/${bvid}?p=${page}`;
 };
 
 const buildBilibiliSongTitle = (item, part) => {

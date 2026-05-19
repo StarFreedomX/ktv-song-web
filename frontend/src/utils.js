@@ -137,16 +137,16 @@ export function initUtils(lastHash){
     };
 
     const executeJump = (url, jumpMode) => {
-        // 尝试从已有的 URL 中提取 page 参数和 BV 号
-        // 此时的 url 可能是前端生成或后端解析出来的 bilibili://video/BVxxx?page=1
+        // 尝试从已有的 URL 中提取分P参数和 BV 号
+        // url 可能是前端生成或后端解析出来的 bilibili://video/BVxxx?p=1 或 bilibili://video/BVxxx?page=1
         let bvId = null;
-        let pageIdx = null;
+        let pageIdx = null; // 1-based
 
         const bvMatch = url.match(/BV[a-zA-Z0-9]{10}/i);
         if (bvMatch) {
             bvId = bvMatch[0];
             const urlObj = new URL(url.replace('bilibili://', 'https://')); // 借用 URL 对象解析参数
-            pageIdx = urlObj.searchParams.get('page');
+            pageIdx = urlObj.searchParams.get('p') || urlObj.searchParams.get('page');
         }
 
         if (jumpMode === 'app') {
@@ -156,14 +156,14 @@ export function initUtils(lastHash){
                 window.location.href = url;
             } else if (bvId) {
                 // 如果拿到的还是原始链接
-                window.location.href = `bilibili://video/${bvId}${pageIdx ? `?page=${pageIdx}` : ''}`;
+                window.location.href = `bilibili://video/${bvId}${pageIdx ? `?p=${pageIdx}` : ''}`;
             } else {
                 window.location.href = url;
             }
         } else {
             // --- Web ---
             if (bvId) {
-                // H5 端的分 P 参数通常是 p=page (从 1 开始编号)
+                // H5 端的分 P 参数是 p=page (从 1 开始编号)
                 const pForWeb = pageIdx ? parseInt(pageIdx) : null;
                 // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
                 const webUrl = `https://m.bilibili.com/video/${bvId}?unique_k=0${pForWeb ? `&p=${pForWeb}` : ''}`;

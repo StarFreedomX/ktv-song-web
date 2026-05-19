@@ -369,6 +369,27 @@ function filterCachedBilibiliSearchVideos(items: BilibiliSearchVideo[], keyword:
 async function resolveBilibiliData(inputUrl: string) {
     let targetUrl = inputUrl;
 
+    // If it's already our internal protocol, just normalize and preserve page.
+    if (inputUrl.startsWith('bilibili://')) {
+        try {
+            const urlObj = new URL(inputUrl.replace('bilibili://', 'https://'));
+            const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
+            if (!bvMatch) return null;
+            const bvid = bvMatch[0];
+            const pageParam = urlObj.searchParams.get('p') || urlObj.searchParams.get('page');
+            const pageNum = pageParam ? parseInt(pageParam, 10) : 0;
+            return {
+                // Normalize to `p` (1-based) for Bilibili app deep link.
+                url: `bilibili://video/${bvid}${pageParam ? `?p=${pageNum}` : ''}`,
+                bvid,
+                // pNum is only used for display; keep it 1-based if present.
+                pNum: pageParam ? pageNum : 0
+            };
+        } catch {
+            // fall through
+        }
+    }
+
     if (inputUrl.includes('b23.tv')) {
         try {
             const response = await axios(inputUrl, {
@@ -394,7 +415,8 @@ async function resolveBilibiliData(inputUrl: string) {
         if (pParam) {
             const pNum = parseInt(pParam, 10);
             return {
-                url: `bilibili://video/${bvid}?page=${Math.max(0, pNum - 1)}`,
+                // Keep `p` 1-based to match bilibili app/web semantics.
+                url: `bilibili://video/${bvid}?p=${Math.max(1, pNum)}`,
                 bvid: bvid,
                 pNum: pNum
             };
