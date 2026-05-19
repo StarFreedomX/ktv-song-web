@@ -12,7 +12,7 @@
                         </div>
                     </div>
                     <button @click="handleClose"
-                            class="flex items-center gap-1.5 px-3 border-1 py-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-full transition-all group">
+                            class="modal-close-btn flex items-center gap-1.5 px-3 border-1 py-1.5 text-slate-400 rounded-full transition-all group">
                         <span class="text-xs font-bold">关闭</span>
                     </button>
                 </div>
@@ -24,12 +24,12 @@
                         :value="searchKeyword"
                         @input="$emit('update:searchKeyword', $event.target.value)"
                         @keyup.enter="$emit('search')"
-                        class="flex-1 px-4 py-3 bg-sky-50/60 rounded-2xl outline-none border-2 border-transparent focus:border-sky-200 transition text-sm"
+                        class="modal-search-input flex-1 px-4 py-3 rounded-2xl outline-none border-2 border-transparent transition text-sm"
                         placeholder="输入歌名或歌曲关键词"
                     >
                     <button
                         @click="$emit('search')"
-                        class="shrink-0 px-5 py-3 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition disabled:opacity-50"
+                        class="modal-search-btn shrink-0 px-5 py-3 rounded-2xl text-white text-sm font-bold transition disabled:opacity-50"
                         :disabled="searchLoading"
                     >
                         {{ searchLoading ? '搜索中' : '搜索' }}
@@ -48,7 +48,7 @@
                                 <div class="min-w-0 flex-1">
                                     <button
                                         type="button"
-                                        class="text-left text-base font-black text-slate-800 line-clamp-2 hover:text-indigo-600 transition"
+                                        class="modal-title-btn text-left text-base font-black text-slate-800 line-clamp-2 transition"
                                         @click="$emit('preview', item)"
                                         :title="`预览：${item.title}`"
                                     >
@@ -62,7 +62,7 @@
                                         <span
                                             v-for="tag in item.tags"
                                             :key="tag"
-                                            class="px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-[10px] font-black"
+                                            class="modal-tag px-2 py-1 rounded-full text-[10px] font-black"
                                         >
                                             {{ tag }}
                                         </span>
@@ -73,7 +73,7 @@
                             <button
                                 v-if="item.parts?.length <= 1"
                                 @click="$emit('select-result', item)"
-                                class="w-full px-3 py-3 rounded-2xl bg-indigo-600 text-white text-sm font-black hover:bg-indigo-700 transition"
+                                class="modal-primary-btn w-full px-3 py-3 rounded-2xl text-white text-sm font-black transition"
                             >
                                 一键点歌
                             </button>
@@ -81,7 +81,7 @@
                             <div v-else class="space-y-2">
                                 <button
                                     @click="$emit('toggle-parts', item.bvid)"
-                                    class="w-full px-3 py-3 rounded-2xl bg-white border border-slate-200 text-slate-700 text-sm font-black hover:border-indigo-300 hover:text-indigo-600 transition"
+                                    class="modal-secondary-btn w-full px-3 py-3 rounded-2xl bg-white border text-slate-700 text-sm font-black transition"
                                 >
                                     {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts.length})` }}
                                 </button>
@@ -90,9 +90,9 @@
                                         v-for="part in item.parts"
                                         :key="`${item.bvid}-${part.page}`"
                                         @click="$emit('select-part', { item, part })"
-                                        class="text-left px-3 py-3 rounded-2xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition"
+                                        class="modal-part-btn text-left px-3 py-3 rounded-2xl bg-white border transition"
                                     >
-                                        <div class="text-xs font-black text-indigo-500">P{{ part.page }}</div>
+                                        <div class="modal-part-index text-xs font-black">P{{ part.page }}</div>
                                         <div class="text-sm text-slate-700 font-semibold truncate">{{ part.part }}</div>
                                     </button>
                                 </div>
@@ -138,3 +138,63 @@ const handleClose = () => {
     emit('update:modelValue', false);
 };
 </script>
+
+<style scoped>
+@reference "tailwindcss";
+
+.modal-close-btn:hover {
+    color: var(--brand-color);
+    background-color: var(--brand-color-bg);
+}
+
+.modal-search-input {
+    background-color: var(--brand-color-bg);
+}
+.modal-search-input:focus {
+    border-color: var(--brand-color-light);
+}
+
+.modal-search-btn {
+    background-color: var(--brand-color);
+}
+.modal-search-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-title-btn:hover {
+    color: var(--brand-color);
+}
+
+.modal-tag {
+    background-color: var(--brand-color-light);
+    color: var(--brand-color);
+}
+
+.modal-primary-btn {
+    background-color: var(--brand-color);
+}
+.modal-primary-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-secondary-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-secondary-btn:hover {
+    border-color: var(--brand-color-light);
+    color: var(--brand-color);
+    background-color: var(--brand-color-bg);
+}
+
+.modal-part-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-part-btn:hover {
+    border-color: var(--brand-color-light);
+    background-color: var(--brand-color-bg);
+}
+
+.modal-part-index {
+    color: var(--brand-color);
+}
+</style>

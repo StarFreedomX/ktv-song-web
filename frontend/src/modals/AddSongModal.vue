@@ -25,12 +25,12 @@
                             :value="searchKeyword"
                             @input="$emit('update:searchKeyword', $event.target.value)"
                             @keyup.enter="$emit('search')"
-                            class="flex-1 px-4 py-3 bg-sky-50/60 rounded-2xl outline-none border-2 border-transparent focus:border-sky-200 transition text-sm"
+                            class="modal-search-input flex-1 px-4 py-3 rounded-2xl outline-none border-2 border-transparent transition text-sm"
                             placeholder="输入歌名或歌曲关键词"
                         >
                         <button
                             @click="$emit('search')"
-                            class="shrink-0 px-4 py-3 rounded-2xl bg-sky-500 text-white text-sm font-bold hover:bg-sky-600 transition disabled:opacity-50"
+                            class="modal-search-btn shrink-0 px-4 py-3 rounded-2xl text-white text-sm font-bold transition disabled:opacity-50"
                             :disabled="searchLoading"
                         >
                             {{ searchLoading ? '搜索中' : '搜索' }}
@@ -54,7 +54,7 @@
                                         <span
                                             v-for="tag in item.tags"
                                             :key="tag"
-                                            class="px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-600 text-[10px] font-bold"
+                                            class="modal-tag px-1.5 py-0.5 rounded-full text-[10px] font-bold"
                                         >
                                             {{ tag }}
                                         </span>
@@ -65,7 +65,7 @@
                             <button
                                 v-if="item.parts?.length <= 1"
                                 @click="$emit('select-result', item)"
-                                class="w-full px-3 py-2 rounded-xl bg-indigo-600 text-white text-sm font-bold hover:bg-indigo-700 transition"
+                                class="modal-primary-btn w-full px-3 py-2 rounded-xl text-white text-sm font-bold transition"
                             >
                                 一键点歌
                             </button>
@@ -73,7 +73,7 @@
                             <div v-else class="space-y-2">
                                 <button
                                     @click="$emit('toggle-parts', item.bvid)"
-                                    class="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-700 text-sm font-bold hover:border-indigo-300 hover:text-indigo-600 transition"
+                                    class="modal-secondary-btn w-full px-3 py-2 rounded-xl bg-white border text-slate-700 text-sm font-bold transition"
                                 >
                                     {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts.length})` }}
                                 </button>
@@ -82,9 +82,9 @@
                                         v-for="part in item.parts"
                                         :key="`${item.bvid}-${part.page}`"
                                         @click="$emit('select-part', { item, part })"
-                                        class="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition"
+                                        class="modal-part-btn w-full text-left px-3 py-2 rounded-xl bg-white border transition"
                                     >
-                                        <div class="text-xs font-black text-indigo-500">P{{ part.page }}</div>
+                                        <div class="modal-part-index text-xs font-black">P{{ part.page }}</div>
                                         <div class="text-sm text-slate-700 font-semibold truncate">{{ part.part }}</div>
                                     </button>
                                 </div>
@@ -224,6 +224,52 @@ const onAutoInput = (e) => {
 .modal-input:focus {
     @apply ring-2;
     ring-color: var(--brand-color-light);
+}
+
+.modal-search-input {
+    background-color: var(--brand-color-bg);
+}
+.modal-search-input:focus {
+    border-color: var(--brand-color-light);
+}
+
+.modal-search-btn {
+    background-color: var(--brand-color);
+}
+.modal-search-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-tag {
+    background-color: var(--brand-color-light);
+    color: var(--brand-color);
+}
+
+.modal-primary-btn {
+    background-color: var(--brand-color);
+}
+.modal-primary-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-secondary-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-secondary-btn:hover {
+    border-color: var(--brand-color-light);
+    color: var(--brand-color);
+    background-color: var(--brand-color-bg);
+}
+
+.modal-part-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-part-btn:hover {
+    border-color: var(--brand-color-light);
+    background-color: var(--brand-color-bg);
+}
+.modal-part-index {
+    color: var(--brand-color);
 }
 
 </style>
