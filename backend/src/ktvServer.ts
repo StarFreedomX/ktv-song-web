@@ -6,8 +6,8 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { getHash, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
-import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
+import { filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 export function runKTVServer(storage: Storage) {
     const app = websockify(new Koa());
@@ -16,7 +16,8 @@ export function runKTVServer(storage: Storage) {
 
     const DEFAULT_CACHE_DATA_EXPIRE_TIME = 24 * 60 * 60 * 1000;
     const DEFAULT_CACHE_OP_EXPIRE_TIME = 5 * 60 * 1000;
-    const DEFAULT_SEARCH_CACHE_EXPIRE_TIME = 6 * 60 * 60 * 1000;
+    const DEFAULT_SEARCH_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
+    const DEFAULT_SEARCH_CATALOG_EXPIRE_TIME = 14 * 24 * 60 * 60 * 1000;
     const DEFAULT_IMAGE_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
 
     // 校验 roomId
@@ -24,6 +25,7 @@ export function runKTVServer(storage: Storage) {
     const CACHE_EXPIRE_TIME = Number(process.env.CACHE_DATA_EXPIRE_TIME) || DEFAULT_CACHE_DATA_EXPIRE_TIME;
     const CACHE_OP_EXPIRE_TIME = Number(process.env.CACHE_OP_EXPIRE_TIME) || DEFAULT_CACHE_OP_EXPIRE_TIME;
     const SEARCH_CACHE_EXPIRE_TIME = Number(process.env.SEARCH_CACHE_EXPIRE_TIME) || DEFAULT_SEARCH_CACHE_EXPIRE_TIME;
+    const SEARCH_CATALOG_EXPIRE_TIME = Number(process.env.SEARCH_CATALOG_EXPIRE_TIME) || DEFAULT_SEARCH_CATALOG_EXPIRE_TIME;
     const IMAGE_CACHE_EXPIRE_TIME = Number(process.env.IMAGE_CACHE_EXPIRE_TIME) || DEFAULT_IMAGE_CACHE_EXPIRE_TIME;
 
     // 缓存变量，按 roomId 分隔
@@ -35,8 +37,9 @@ export function runKTVServer(storage: Storage) {
         expireAt: number
     }>();
 
-    const getSearchCacheKey = (keyword: string) => keyword.trim().toLowerCase();
+    const getSearchCacheKey = (keyword: string) => normalizeSearchText(keyword);
     const getImageProxyUrl = (url: string) => `/api/bilibiliImage?url=${encodeURIComponent(url)}`;
+    const SEARCH_CATALOG_KEY = 'global';
 
     const getSearchClickCounts = async (items: BilibiliSearchVideo[]) => {
         const counts: Record<string, number> = {};
@@ -45,6 +48,14 @@ export function runKTVServer(storage: Storage) {
             counts[item.bvid] = Number(count) || 0;
         }));
         return counts;
+    };
+
+    const getSearchCatalog = async () => {
+        return (await storage.get<BilibiliSearchVideo[]>(SEARCH_CATALOG_NAMESPACE, SEARCH_CATALOG_KEY)) || [];
+    };
+
+    const saveSearchCatalog = async (items: BilibiliSearchVideo[]) => {
+        await storage.set(SEARCH_CATALOG_NAMESPACE, SEARCH_CATALOG_KEY, items, SEARCH_CATALOG_EXPIRE_TIME);
     };
 
     const withProxyImage = (items: BilibiliSearchVideo[]) => {
@@ -482,15 +493,35 @@ export function runKTVServer(storage: Storage) {
 
         try {
             const cacheKey = getSearchCacheKey(keyword);
-            let items = await storage.get<BilibiliSearchVideo[]>(SEARCH_CACHE_NAMESPACE, cacheKey);
-            if (!items?.length) {
-                items = await searchBilibiliKtvVideos(keyword);
-                await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, items, SEARCH_CACHE_EXPIRE_TIME);
+            const catalog = await getSearchCatalog();
+            const catalogClickCounts = await getSearchClickCounts(catalog);
+            const localMatches = filterCachedBilibiliSearchVideos(catalog, keyword, catalogClickCounts);
+
+            let items: BilibiliSearchVideo[] = localMatches.slice(0, 20);
+
+            if (items.length < 8) {
+                let remoteOrExact = await storage.get<BilibiliSearchVideo[]>(SEARCH_CACHE_NAMESPACE, cacheKey);
+                if (!remoteOrExact?.length) {
+                    remoteOrExact = await searchBilibiliKtvVideos(keyword);
+                    await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, remoteOrExact, SEARCH_CACHE_EXPIRE_TIME);
+                }
+
+                const mergedCatalog = mergeBilibiliSearchVideos(catalog, remoteOrExact);
+                await saveSearchCatalog(mergedCatalog);
+
+                const mergedClickCounts = await getSearchClickCounts(mergedCatalog);
+                const refreshedLocalMatches = filterCachedBilibiliSearchVideos(mergedCatalog, keyword, mergedClickCounts);
+                const remoteSorted = sortBilibiliSearchVideos(remoteOrExact, mergedClickCounts);
+                items = mergeBilibiliSearchVideos(refreshedLocalMatches, remoteSorted).slice(0, 20);
             }
 
             const clickCounts = await getSearchClickCounts(items);
             const sortedItems = sortBilibiliSearchVideos(items, clickCounts);
-            koaCtx.body = { success: true, items: withProxyImage(sortedItems) };
+            koaCtx.body = {
+                success: true,
+                keyword: normalizeSearchText(keyword),
+                items: withProxyImage(sortedItems)
+            };
         } catch (error) {
             ktvLogger.error('Bilibili search failed', error);
             koaCtx.status = 500;

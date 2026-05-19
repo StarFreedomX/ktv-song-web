@@ -6,12 +6,12 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
-const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '投屏', 'ktv字幕'] as const;
+const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '投屏', 'ktv'] as const;
 const BILIBILI_TAG_PRIORITY: Record<string, number> = {
     'ニコカラ': 0,
     'カラオケ': 1,
     '投屏': 2,
-    'ktv字幕': 3
+    'ktv': 3
 };
 const WBI_MIXIN_KEY_ENC_TAB = [
     46, 47, 18, 2, 53, 8, 23, 32,
@@ -32,6 +32,12 @@ type BiliSearchItem = {
 
 function stripHtml(input: string) {
     return (input || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim();
+}
+
+function normalizeSearchText(input: string) {
+    return (input || '')
+        .toLowerCase()
+        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;]/g, '');
 }
 
 function normalizeBilibiliPic(pic?: string) {
@@ -216,6 +222,72 @@ function sortBilibiliSearchVideos(items: BilibiliSearchVideo[], clickCounts: Rec
         if (a.tags.length !== b.tags.length) return b.tags.length - a.tags.length;
         return a.title.localeCompare(b.title, 'zh-Hans-CN');
     });
+}
+
+function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
+    const normalizedKeyword = normalizeSearchText(keyword);
+    if (!normalizedKeyword) return 0;
+
+    const titleText = normalizeSearchText(item.title);
+    const tagsText = normalizeSearchText(item.tags.join(' '));
+    const partsText = normalizeSearchText(item.parts.map(part => part.part).join(' '));
+    const haystack = `${titleText} ${tagsText} ${partsText}`;
+
+    if (!haystack.includes(normalizedKeyword)) return 0;
+
+    let score = 10;
+    if (titleText === normalizedKeyword) score += 200;
+    if (titleText.includes(normalizedKeyword)) score += 120;
+    if (partsText.includes(normalizedKeyword)) score += 50;
+    if (tagsText.includes(normalizedKeyword)) score += 30;
+
+    const firstIndex = haystack.indexOf(normalizedKeyword);
+    if (firstIndex >= 0) score += Math.max(0, 40 - firstIndex);
+    score += Math.max(0, 20 - Math.max(0, item.title.length - keyword.length));
+    return score;
+}
+
+function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
+    const merged = new Map<string, BilibiliSearchVideo>();
+    [...existing, ...incoming].forEach((item) => {
+        const current = merged.get(item.bvid);
+        if (!current) {
+            merged.set(item.bvid, {
+                ...item,
+                tags: [...item.tags],
+                parts: [...item.parts]
+            });
+            return;
+        }
+
+        current.title = current.title || item.title;
+        current.pic = current.pic || item.pic;
+        current.tags = [...new Set([...current.tags, ...item.tags])];
+        const partMap = new Map(current.parts.map(part => [part.page, part]));
+        item.parts.forEach(part => {
+            if (!partMap.has(part.page)) partMap.set(part.page, part);
+        });
+        current.parts = [...partMap.values()].sort((a, b) => a.page - b.page);
+    });
+    return [...merged.values()];
+}
+
+function filterCachedBilibiliSearchVideos(items: BilibiliSearchVideo[], keyword: string, clickCounts: Record<string, number> = {}) {
+    return items
+        .map(item => ({
+            item,
+            clicks: clickCounts[item.bvid] || 0,
+            score: scoreBilibiliSearchVideo(item, keyword),
+            hasPreferredTag: item.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 2)
+        }))
+        .filter(entry => entry.score > 0 && (entry.hasPreferredTag || entry.clicks > 0))
+        .sort((a, b) => {
+            if (a.hasPreferredTag !== b.hasPreferredTag) return a.hasPreferredTag ? -1 : 1;
+            if (a.score !== b.score) return b.score - a.score;
+            if (a.clicks !== b.clicks) return b.clicks - a.clicks;
+            return 0;
+        })
+        .map(entry => entry.item);
 }
 
 /**
@@ -568,4 +640,15 @@ const songListTools = {
     })
 }
 
-export { resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songOperation, getHash, songListTools };
+export {
+    filterCachedBilibiliSearchVideos,
+    mergeBilibiliSearchVideos,
+    normalizeSearchText,
+    resolveBilibiliData,
+    scoreBilibiliSearchVideo,
+    searchBilibiliKtvVideos,
+    sortBilibiliSearchVideos,
+    songOperation,
+    getHash,
+    songListTools
+};

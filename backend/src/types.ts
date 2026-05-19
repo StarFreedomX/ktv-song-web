@@ -7,6 +7,7 @@ export type debugType = typeof debugTypeArray[number];
 export const DATABASE_NAME = "ktv_room" as const;
 export const SEARCH_CACHE_NAMESPACE = "bilibili_search_cache" as const;
 export const SEARCH_CLICK_NAMESPACE = "bilibili_search_click" as const;
+export const SEARCH_CATALOG_NAMESPACE = "bilibili_search_catalog" as const;
 
 export type IdentifiedWebSocket = WebSocket & {
     clientId: string;

@@ -344,7 +344,7 @@ const add = async () => {
     });
 }
 
-const enqueueSong = async ({ title, url }) => {
+const enqueueSong = async ({ title, url, onSuccess }) => {
     let rawUrl = (url || '').trim();
     if (!title || !rawUrl) return false;
 
@@ -372,7 +372,12 @@ const enqueueSong = async ({ title, url }) => {
         song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
     });
     if (!success) updateStatus.value = UpdateStatus.WAITING;
-    else resetAddSongState();
+    else {
+        if (typeof onSuccess === 'function') {
+            await onSuccess();
+        }
+        resetAddSongState();
+    }
     return success;
 };
 
@@ -429,19 +434,19 @@ const buildBilibiliSongTitle = (item, part) => {
 };
 
 const addBilibiliSearchResult = async (item) => {
-    trackBilibiliSelection(item);
     const part = item.parts?.[0] || null;
     await enqueueSong({
         title: buildBilibiliSongTitle(item, part),
-        url: getBilibiliSongUrl(item.bvid, part?.page || 1)
+        url: getBilibiliSongUrl(item.bvid, part?.page || 1),
+        onSuccess: () => trackBilibiliSelection(item)
     });
 };
 
 const addBilibiliPart = async ({ item, part }) => {
-    trackBilibiliSelection(item);
     await enqueueSong({
         title: buildBilibiliSongTitle(item, part),
-        url: getBilibiliSongUrl(item.bvid, part.page)
+        url: getBilibiliSongUrl(item.bvid, part.page),
+        onSuccess: () => trackBilibiliSelection(item)
     });
 };
 
