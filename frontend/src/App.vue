@@ -465,6 +465,11 @@ const toggleBilibiliParts = (bvid) => {
     expandedBvid.value = expandedBvid.value === bvid ? null : bvid;
 };
 
+const previewBilibiliSearchResult = (item) => {
+    if (!item?.bvid) return;
+    executeJump(getBilibiliSongUrl(item.bvid, 1), cfg.value.jumpMode);
+};
+
 // 点击垃圾桶图标，仅记录要删除的对象并显示弹窗
 const remove = (songObj) => {
     deletingSong.value = songObj;
@@ -1043,6 +1048,7 @@ onUnmounted(() => {
         @toggle-parts="toggleBilibiliParts"
         @select-result="addBilibiliSearchResult"
         @select-part="addBilibiliPart"
+        @preview="previewBilibiliSearchResult"
     />
 
     <EditSongModal

@@ -8,7 +8,7 @@
                     <div>
                         <h3 class="text-xl font-black text-slate-800">Bilibili 选歌</h3>
                         <div class="text-xs text-slate-400 font-semibold mt-0.5">
-                            搜索结果仅供参考，受 API 限制；如没搜到想要的歌曲，建议直接去 B 站搜索后粘贴链接
+                            搜索结果仅供参考，受 API 限制；点击歌名可预览（默认 P1），预览跳转方式跟随「设置-跳转方式」
                         </div>
                     </div>
                     <button @click="handleClose"
@@ -19,11 +19,13 @@
 
                 <div class="flex flex-col sm:flex-row gap-2">
                     <input
+                        name="bilibili_search_keyword"
+                        autocomplete="on"
                         :value="searchKeyword"
                         @input="$emit('update:searchKeyword', $event.target.value)"
                         @keyup.enter="$emit('search')"
                         class="flex-1 px-4 py-3 bg-sky-50/60 rounded-2xl outline-none border-2 border-transparent focus:border-sky-200 transition text-sm"
-                        placeholder="输入歌名，自动带 カラオケ / ニコカラ / 投屏 / KTV 搜索"
+                        placeholder="输入歌名或歌曲关键词"
                     >
                     <button
                         @click="$emit('search')"
@@ -44,7 +46,14 @@
                             <div class="flex gap-4">
                                 <img :src="item.pic" :alt="item.title" class="w-28 h-16 rounded-2xl object-cover bg-slate-200 shrink-0">
                                 <div class="min-w-0 flex-1">
-                                    <div class="text-base font-black text-slate-800 line-clamp-2">{{ item.title }}</div>
+                                    <button
+                                        type="button"
+                                        class="text-left text-base font-black text-slate-800 line-clamp-2 hover:text-indigo-600 transition"
+                                        @click="$emit('preview', item)"
+                                        :title="`预览：${item.title}`"
+                                    >
+                                        {{ item.title }}
+                                    </button>
                                     <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-slate-600">
                                         <div v-if="item.author" class="truncate">up: {{ item.author }}</div>
                                         <div class="text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
@@ -122,6 +131,7 @@ const emit = defineEmits([
     'toggle-parts',
     'select-result',
     'select-part',
+    'preview',
 ]);
 
 const handleClose = () => {
