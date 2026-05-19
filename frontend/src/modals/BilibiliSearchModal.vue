@@ -45,10 +45,10 @@
                                 <img :src="item.pic" :alt="item.title" class="w-28 h-16 rounded-2xl object-cover bg-slate-200 shrink-0">
                                 <div class="min-w-0 flex-1">
                                     <div class="text-base font-black text-slate-800 line-clamp-2">{{ item.title }}</div>
-                                    <div v-if="item.author" class="mt-1 text-xs text-slate-600 font-semibold truncate">
-                                        UP主：{{ item.author }}
+                                    <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-semibold text-slate-600">
+                                        <div v-if="item.author" class="truncate">up: {{ item.author }}</div>
+                                        <div class="text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
                                     </div>
-                                    <div class="mt-1 text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
                                     <div class="mt-2 flex flex-wrap gap-1">
                                         <span
                                             v-for="tag in item.tags"

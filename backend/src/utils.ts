@@ -376,11 +376,11 @@ async function resolveBilibiliData(inputUrl: string) {
             const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
             if (!bvMatch) return null;
             const bvid = bvMatch[0];
-            const pageParam = urlObj.searchParams.get('p') || urlObj.searchParams.get('page');
+            const pageParam = urlObj.searchParams.get('page');
             const pageNum = pageParam ? parseInt(pageParam, 10) : 0;
             return {
-                // Normalize to `p` (1-based) for Bilibili app deep link.
-                url: `bilibili://video/${bvid}${pageParam ? `?p=${pageNum}` : ''}`,
+                // Normalize to `page` (0-based) for Bilibili app deep link.
+                url: `bilibili://video/${bvid}${pageParam ? `?page=${pageNum}` : ''}`,
                 bvid,
                 // pNum is only used for display; keep it 1-based if present.
                 pNum: pageParam ? pageNum : 0
@@ -415,8 +415,8 @@ async function resolveBilibiliData(inputUrl: string) {
         if (pParam) {
             const pNum = parseInt(pParam, 10);
             return {
-                // Keep `p` 1-based to match bilibili app/web semantics.
-                url: `bilibili://video/${bvid}?p=${Math.max(1, pNum)}`,
+                // Convert web `p` (1-based) to app `page` (0-based).
+                url: `bilibili://video/${bvid}?page=${Math.max(0, pNum - 1)}`,
                 bvid: bvid,
                 pNum: pNum
             };

@@ -6,6 +6,7 @@
 - Use `docker compose up -d --build --force-recreate --remove-orphans` for rebuilds, and `docker compose logs -f <service>` for runtime checks.
 - Keep backend cache changes compatible with Redis TTL and existing `expireAt` payloads.
 - Preserve the current B站点歌 flow: frontend calls `/api/bilibiliSearch`, backend owns search/cache logic, and Redis stores persistent cache data.
+- B站跳转参数要区分平台：`bilibili://` 自定义协议用 `page` 且从 `0` 开始，网页端用 `p` 且从 `1` 开始；解析、生成、回写时都要兼容两种格式。
 - Duration env vars may use `ms`, `s`, `m`, `h`, or `d` suffixes; prefer readable forms like `5m`, `1h`, and `24h` in compose/docs.
 - Update `readme.md` whenever startup steps, cache behavior, or search integration behavior changes.
 - Avoid broad refactors; keep edits focused on the requested feature or fix.
