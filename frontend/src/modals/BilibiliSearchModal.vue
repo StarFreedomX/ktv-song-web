@@ -79,14 +79,14 @@
                             </div>
 
                             <button
-                                v-if="item.parts?.length <= 1"
+                                v-if="item.parts && item.parts.length <= 1"
                                 @click="$emit('select-result', item)"
                                 class="modal-primary-btn w-full px-3 py-3 rounded-2xl text-white text-sm font-black transition"
                             >
                                 一键点歌
                             </button>
 
-                            <div v-else class="space-y-2">
+                            <div v-else-if="item.parts && item.parts.length > 1" class="space-y-2">
                                 <button
                                     @click="$emit('toggle-parts', item.bvid)"
                                     class="modal-secondary-btn w-full px-3 py-3 rounded-2xl bg-white border text-slate-700 text-sm font-black transition"
