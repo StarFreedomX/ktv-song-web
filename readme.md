@@ -56,11 +56,13 @@
 
 ### 图片缓存和代理
 
-- **代理入口**：搜索结果里的封面图不会直接把原始链接发给前端，而是先改写成 `/api/bilibiliImage?url=...`，这样前端只需要加载本站接口即可。
-- **安全限制**：`/api/bilibiliImage` 只允许 `hdslb.com` 域名，防止任意外链图片被当成代理源。
-- **图片缓存**：后端会把拉取到的图片缓存在内存里的 `imageCache`，默认 TTL 是 `1 day`，对应 `IMAGE_CACHE_EXPIRE_TIME`。
-- **浏览器缓存**：接口响应还会设置 `Cache-Control: public, max-age=86400`，让浏览器也能复用这张图，减少重复请求。
-- **配置位置**：图片缓存 TTL 的默认值在 `backend/src/ktvServer.ts` 顶部，Docker 环境可以在 `docker-compose.yml` 里通过 `IMAGE_CACHE_EXPIRE_TIME` 调整。
+- **默认行为**：搜索结果默认返回 B 站 CDN 原始封面链接（`pic`），前端会优先直接加载这个地址，并使用 `referrerpolicy="no-referrer"`。
+- **代理何时启用**：只有在启用 `ENABLE_BILIBILI_IMAGE_PROXY` 时，后端才会额外提供代理地址（`picProxy`，格式为 `/api/bilibiliImage?url=...`）。
+- **前端回退逻辑**：前端默认先加载 `pic`；如果直连加载失败，才会回退到 `picProxy`（前提是后端已提供该字段）。
+- **安全限制**：`/api/bilibiliImage` 只允许代理 `hdslb.com` 域名，防止任意外链图片被当成代理源。
+- **图片缓存**：对于通过 `/api/bilibiliImage` 拉取的图片，后端会缓存在内存里的 `imageCache`，默认 TTL 是 `1 day`，对应 `IMAGE_CACHE_EXPIRE_TIME`。
+- **浏览器缓存**：`/api/bilibiliImage` 响应还会设置 `Cache-Control: public, max-age=86400`，让浏览器也能复用这张图，减少重复请求。
+- **配置位置**：图片缓存 TTL 的默认值在 `backend/src/ktvServer.ts` 顶部，Docker 环境可以在 `docker-compose.yml` 里通过 `IMAGE_CACHE_EXPIRE_TIME` 调整；是否给搜索结果附带 `picProxy` 则取决于 `ENABLE_BILIBILI_IMAGE_PROXY`。
 
 ## 投屏功能
 
