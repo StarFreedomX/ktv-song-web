@@ -163,7 +163,10 @@ const props = defineProps({
         type: Array,
         default: () => []
     },
-    expandedBvid: String,
+    expandedBvid: {
+        type: [String, null],
+        default: null
+    },
     autoInput: String,            // 自动输入的内容
     form: Object                  // 表单对象 {title, url}
 });
