@@ -1,4 +1,5 @@
 import process from "node:process";
+import { LRUCache } from 'lru-cache';
 import axios from "axios";
 import ktvLogger from "@/logger";
 import Koa from "koa";
@@ -48,6 +49,8 @@ export function runKTVServer(storage: Storage) {
     const DEFAULT_SEARCH_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
     const DEFAULT_SEARCH_CATALOG_EXPIRE_TIME = 14 * 24 * 60 * 60 * 1000;
     const DEFAULT_IMAGE_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
+    const DEFAULT_IMAGE_CACHE_MAX_SIZE = 50 * 1024 * 1024;
+    const DEFAULT_IMAGE_CACHE_MAX = 500;
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
@@ -56,16 +59,22 @@ export function runKTVServer(storage: Storage) {
     const SEARCH_CACHE_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CACHE_EXPIRE_TIME, DEFAULT_SEARCH_CACHE_EXPIRE_TIME);
     const SEARCH_CATALOG_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CATALOG_EXPIRE_TIME, DEFAULT_SEARCH_CATALOG_EXPIRE_TIME);
     const IMAGE_CACHE_EXPIRE_TIME = parseDurationMs(process.env.IMAGE_CACHE_EXPIRE_TIME, DEFAULT_IMAGE_CACHE_EXPIRE_TIME);
+    const IMAGE_CACHE_MAX_SIZE = Number(process.env.IMAGE_CACHE_MAX_SIZE) ?? DEFAULT_IMAGE_CACHE_MAX_SIZE;
+    const IMAGE_CACHE_MAX = Number(process.env.IMAGE_CACHE_MAX) ?? DEFAULT_IMAGE_CACHE_MAX;
     const ENABLE_BILIBILI_IMAGE_PROXY = process.env.ENABLE_BILIBILI_IMAGE_PROXY === 'true';
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
     const roomSongsCache: Record<string, SongLists> = {}
-    const imageCache = new Map<string, {
-        buffer: Buffer,
-        contentType: string,
-        expireAt: number
-    }>();
+    const imageCache = new LRUCache<string, {
+        buffer: Buffer;
+        contentType: string;
+    }>({
+        max: IMAGE_CACHE_MAX,                  // 限制最多缓存 500 张图片
+        maxSize: IMAGE_CACHE_MAX_SIZE, // 限制总体积最大 50MB
+        sizeCalculation: (value) => value.buffer.length, // 按 Buffer 实际字节数计算
+        ttl: IMAGE_CACHE_EXPIRE_TIME,  // 统一过期时间：24小时
+    });
 
     const getSearchCacheKey = (keyword: string) => normalizeSearchText(keyword);
     const getImageProxyUrl = (url: string) => `/api/bilibiliImage?url=${encodeURIComponent(url)}`;
@@ -103,11 +112,6 @@ export function runKTVServer(storage: Storage) {
             if (!roomOpCache[roomId]?.length) {
                 delete roomOpCache[roomId];
                 delete roomSongsCache[roomId];
-            }
-        }
-        for (const [url, cached] of imageCache.entries()) {
-            if (cached.expireAt <= now) {
-                imageCache.delete(url);
             }
         }
     }, CACHE_OP_EXPIRE_TIME);
@@ -568,6 +572,9 @@ export function runKTVServer(storage: Storage) {
         if (!bvid) {
             koaCtx.body = { success: false, msg: 'Missing bvid' };
             return;
+        }else if (!/^BV[a-zA-Z0-9]{10}$/.test(bvid)) {
+            koaCtx.body = { success: false, msg: 'Invalid bvid' };
+            return;
         }
 
         const count = (await storage.get<number>(SEARCH_CLICK_NAMESPACE, bvid)) || 0;
@@ -576,6 +583,14 @@ export function runKTVServer(storage: Storage) {
     });
 
     router.get('/api/bilibiliImage', async (koaCtx) => {
+        if (!ENABLE_BILIBILI_IMAGE_PROXY) {
+            koaCtx.status = 500;
+            koaCtx.body = {
+                success: false,
+                msg: 'Image proxy is disabled'
+            };
+            return;
+        }
         const { url: urls } = koaCtx.query;
         const imageUrl = Array.isArray(urls) ? urls.at(0) : urls;
         if (!imageUrl) {
@@ -593,14 +608,15 @@ export function runKTVServer(storage: Storage) {
             return;
         }
 
-        if (!parsedUrl.hostname.endsWith('hdslb.com')) {
+        const hostname = parsedUrl.hostname;
+        if (!(hostname === 'hdslb.com' || hostname.endsWith('.hdslb.com')) || parsedUrl.protocol !== 'https:') {
             koaCtx.status = 403;
             koaCtx.body = 'Forbidden host';
             return;
         }
 
         const cached = imageCache.get(imageUrl);
-        if (cached && cached.expireAt > Date.now()) {
+        if (cached) {
             koaCtx.set('Content-Type', cached.contentType);
             koaCtx.set('Cache-Control', 'public, max-age=86400');
             koaCtx.body = cached.buffer;
@@ -620,7 +636,6 @@ export function runKTVServer(storage: Storage) {
             imageCache.set(imageUrl, {
                 buffer,
                 contentType,
-                expireAt: Date.now() + IMAGE_CACHE_EXPIRE_TIME
             });
             koaCtx.set('Content-Type', contentType);
             koaCtx.set('Cache-Control', 'public, max-age=86400');

@@ -79,12 +79,12 @@
                                 一键点歌
                             </button>
 
-                            <div v-else class="space-y-2">
+                            <div v-else-if="item.parts?.length > 1" class="space-y-2">
                                 <button
                                     @click="$emit('toggle-parts', item.bvid)"
                                     class="modal-secondary-btn w-full px-3 py-2 rounded-xl bg-white border text-slate-700 text-sm font-bold transition"
                                 >
-                                    {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts.length})` }}
+                                    {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts?.length})` }}
                                 </button>
                                 <div v-if="expandedBvid === item.bvid" class="space-y-1">
                                     <button

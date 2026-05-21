@@ -161,7 +161,8 @@ export function initUtils(lastHash){
         } else {
             // --- Web ---
             if (bvId) {
-                // H5 端的分 P 参数是 p=page (从 1 开始编号)
+                // H5 端的分 P 参数通常是 p=(page+1)，参数p为从1开始编号的变量
+                // 这里的处理是为了让 Web 端也能跳到对应的分 P
                 const pageForWeb = pageIdx ? parseInt(pageIdx) : null;
                 const pForWeb = pageForWeb !== null ? pageForWeb + 1 : null;
                 // 这里的unique_k=0不知道是什么，反正加上之后b站手机网页会显示更详细的信息
