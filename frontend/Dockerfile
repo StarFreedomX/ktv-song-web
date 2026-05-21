@@ -1,15 +1,15 @@
 # --- 阶段 1: 构建 ---
 FROM node:22-alpine AS builder
 
-# 强制使用镜像源，避免构建时走默认 npm registry
-ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
-    npm_config_registry=https://registry.npmmirror.com \
-    PNPM_HOME=/root/.local/share/pnpm
-
 # 安装 pnpm
 RUN npm install -g pnpm
-RUN npm config set registry ${NPM_CONFIG_REGISTRY} && \
-    pnpm config set registry ${NPM_CONFIG_REGISTRY}
+
+ARG NPM_CONFIG_REGISTRY
+
+RUN if [ -n "${NPM_CONFIG_REGISTRY}" ]; then \
+        npm config set registry ${NPM_CONFIG_REGISTRY} && \
+        pnpm config set registry ${NPM_CONFIG_REGISTRY}; \
+    fi
 
 WORKDIR /app
 
@@ -22,21 +22,13 @@ COPY . .
 RUN pnpm --filter ./frontend build
 
 # --- 阶段 2: 运行 ---
-FROM node:22-alpine AS runner
+FROM nginx:alpine-slim AS runner
 
-WORKDIR /app
+# 拷贝静态产物
+COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 
-ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
-    npm_config_registry=https://registry.npmmirror.com \
-    NODE_ENV=production \
-    BACKEND_URL=http://ktv-web-backend:5823 \
-    HOST=0.0.0.0 \
-    PORT=5526
-
-COPY --from=builder /app/frontend/dist ./dist
-COPY --from=builder /app/frontend/start-frontend.cjs ./start-frontend.cjs
-COPY --from=builder /app/frontend/package.json ./package.json
-COPY --from=builder /app/frontend/node_modules ./node_modules
+# 拷贝模板
+COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 5526
-CMD ["node", "start-frontend.cjs"]
+ENV BACKEND_URL=http://ktv-web-backend:5823
