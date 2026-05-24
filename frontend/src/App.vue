@@ -9,6 +9,7 @@ import JumpConfirmModal from "./modals/JumpConfirmModal.vue";
 import DeleteConfirmModal from "./modals/DeleteConfirmModal.vue";
 import EditSongModal from "./modals/EditSongModal.vue";
 import AddSongModal from "./modals/AddSongModal.vue";
+import BilibiliSearchModal from "./modals/BilibiliSearchModal.vue";
 import NicknameModal from "./modals/NicknameModal.vue";
 import BottomNav from "./modals/BottomNav.vue";
 import QueueList from "./modals/QueueList.vue";
@@ -80,6 +81,7 @@ const showNicknameModal = ref(false);
 const showShuffleConfirm = ref(false);
 const showSettings = ref(false);
 const showAddModal = ref(false);
+const showBiliSearchModal = ref(false);
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -100,6 +102,10 @@ const form = ref({ title: '', url: '' })
 const pendingJumpUrl = ref(null); // 存储待跳转的 URL
 const jumpSongTitle = ref('');    // 存储待跳转的歌曲标题
 const autoInput = ref('');
+const biliSearchKeyword = ref('');
+const biliSearchLoading = ref(false);
+const biliSearchResults = ref([]);
+const expandedBvid = ref(null);
 const isRefreshing = ref(false);
 const updateStatus = ref(UpdateStatus.IDLE);
 const allowUpdate = computed(() => !isDragging.value && !isRefreshing.value);
@@ -111,7 +117,8 @@ const {
     handleAutoRecognize,
     executeJump,
     backHome,
-    getLISIndices
+    getLISIndices,
+    normalizeBilibiliTitle
 } = initUtils(lastHash);
 
 // 辅助函数：显示瞬时状态并恢复
@@ -146,6 +153,17 @@ const filteredFavorites = computed(() => {
 watch(activeTab, (val) => localStorage.setItem('ktv_active_tab', val));
 watch(cfg, (newVal) => localStorage.setItem('ktv_config', JSON.stringify(newVal)), { deep: true });
 watch(favorites, (val) => localStorage.setItem('ktv_favorites', JSON.stringify(val)), { deep: true });
+watch(showAddModal, (visible) => {
+    if (!visible) {
+        biliSearchLoading.value = false;
+        biliSearchKeyword.value = '';
+        biliSearchResults.value = [];
+        expandedBvid.value = null;
+        autoInput.value = '';
+        form.value = { title: '', url: '' };
+        isAddingToFavorites.value = false;
+    }
+});
 
 // 监听正在播放歌曲的变化
 watch(() => singing.value, (newSong, oldSong) => {
@@ -309,17 +327,11 @@ const handleAdd = async () => {
         if (!favorites.value.some(f => f.url === newFav.url)) {
             favorites.value.push(newFav);
         }
-        showAddModal.value = false;
-        isAddingToFavorites.value = false; // 重置状态
-        // 重置表单
-        form.value.title = '';
-        form.value.url = '';
+        resetAddSongState();
     } else {
         // 原有的添加待唱列表逻辑
         await add();
     }
-    showAddModal.value = false;
-    autoInput.value = ''; // 清空识别框
 };
 
 const reAdd = async (song) => {
@@ -329,15 +341,22 @@ const reAdd = async (song) => {
 };
 
 const add = async () => {
-    let rawUrl = form.value.url.trim();
-    if (!form.value.title || !rawUrl) return;
+    await enqueueSong({
+        title: form.value.title,
+        url: form.value.url
+    });
+}
+
+const enqueueSong = async ({ title, url, onSuccess }) => {
+    let rawUrl = (url || '').trim();
+    if (!title || !rawUrl) return false;
 
     // 计算有效长度（排除正在删除的）
     const effectiveLen = queued.value.filter(s => !s.isDeleting).length;
 
     const newSong = {
         id: 's-' + Math.random().toString(36).slice(2, 11),
-        title: form.value.title,
+        title,
         url: rawUrl,
         addedBy: cfg.value.nickname,
         isNew: true
@@ -356,7 +375,100 @@ const add = async () => {
         song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
     });
     if (!success) updateStatus.value = UpdateStatus.WAITING;
-}
+    else {
+        if (typeof onSuccess === 'function') {
+            await onSuccess();
+        }
+        resetAddSongState();
+    }
+    return success;
+};
+
+const resetAddSongState = () => {
+    showAddModal.value = false;
+    isAddingToFavorites.value = false;
+    autoInput.value = '';
+    form.value = { title: '', url: '' };
+    biliSearchKeyword.value = '';
+    biliSearchResults.value = [];
+    expandedBvid.value = null;
+};
+
+const searchBilibiliSongs = async () => {
+    const keyword = biliSearchKeyword.value.trim();
+    expandedBvid.value = null;
+    if (!keyword) {
+        biliSearchResults.value = [];
+        return;
+    }
+
+    biliSearchLoading.value = true;
+    try {
+        const res = await fetch(`api/bilibiliSearch?keyword=${encodeURIComponent(keyword)}`).then(r => r.json());
+        biliSearchResults.value = res.success ? (res.items || []) : [];
+        if (biliSearchResults.value.length) showBiliSearchModal.value = true;
+    } catch (e) {
+        console.error('Bilibili Search Error:', e);
+        biliSearchResults.value = [];
+    } finally {
+        biliSearchLoading.value = false;
+    }
+};
+
+const trackBilibiliSelection = async (item) => {
+    try {
+        await fetch('api/bilibiliSearch/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bvid: item.bvid })
+        });
+    } catch (e) {
+        console.error('Track Bilibili Selection Error:', e);
+    }
+};
+
+const getBilibiliSongUrl = (bvid, page) => {
+    // Bilibili App deep link uses `page` (0-based) for 分P.
+    if (!page || page <= 1) return `bilibili://video/${bvid}?page=0`;
+    return `bilibili://video/${bvid}?page=${page - 1}`;
+};
+
+const buildBilibiliSongTitle = (item, part) => {
+    if (!part || !item.parts || item.parts.length <= 1) return item.title;
+    return `${item.title} - P${part.page} ${part.part}`;
+};
+
+const addBilibiliSearchResult = async (item) => {
+    const part = item.parts?.[0] || null;
+    await enqueueSong({
+        title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
+        url: getBilibiliSongUrl(item.bvid, part?.page || 1),
+        onSuccess: async () => {
+            await trackBilibiliSelection(item);
+            showBiliSearchModal.value = false;
+        }
+    });
+};
+
+const addBilibiliPart = async ({ item, part }) => {
+    await enqueueSong({
+        title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
+        url: getBilibiliSongUrl(item.bvid, part.page),
+        onSuccess: async () => {
+            await trackBilibiliSelection(item);
+            showBiliSearchModal.value = false;
+        }
+    });
+};
+
+const toggleBilibiliParts = (bvid) => {
+    expandedBvid.value = expandedBvid.value === bvid ? null : bvid;
+};
+
+const previewBilibiliSearchResult = (item) => {
+    if (!item?.bvid) return;
+    executeJump(getBilibiliSongUrl(item.bvid, 1), cfg.value.jumpMode);
+};
 
 // 点击垃圾桶图标，仅记录要删除的对象并显示弹窗
 const remove = (songObj) => {
@@ -912,10 +1024,31 @@ onUnmounted(() => {
     <AddSongModal
         v-model="showAddModal"
         v-model:isAddingToFavorites="isAddingToFavorites"
+        v-model:searchKeyword="biliSearchKeyword"
         v-model:autoInput="autoInput"
         v-model:form="form"
+        :search-loading="biliSearchLoading"
+        :search-results="biliSearchResults"
+        :expanded-bvid="expandedBvid"
         @auto-recognize="handleAutoRecognize($event, form)"
+        @search="searchBilibiliSongs"
+        @toggle-parts="toggleBilibiliParts"
+        @select-result="addBilibiliSearchResult"
+        @select-part="addBilibiliPart"
         @submit="handleAdd"
+    />
+
+    <BilibiliSearchModal
+        v-model="showBiliSearchModal"
+        v-model:searchKeyword="biliSearchKeyword"
+        :search-loading="biliSearchLoading"
+        :search-results="biliSearchResults"
+        :expanded-bvid="expandedBvid"
+        @search="searchBilibiliSongs"
+        @toggle-parts="toggleBilibiliParts"
+        @select-result="addBilibiliSearchResult"
+        @select-part="addBilibiliPart"
+        @preview="previewBilibiliSearchResult"
     />
 
     <EditSongModal

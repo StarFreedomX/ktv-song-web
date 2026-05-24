@@ -1,8 +1,375 @@
 import axios from "axios";
-import { DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
+import { BilibiliSearchVideo, BilibiliVideoPart, DATABASE_NAME, OpLog, Song, SongLists } from "@/types";
 import ktvLogger from "@/logger";
 import * as crypto from 'crypto';
 import { Storage } from "@/storage";
+
+const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
+const BILIBILI_REFERER = 'https://www.bilibili.com/';
+const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '纯k自用', '卡拉OK'] as const;
+const BILIBILI_TAG_PRIORITY: Record<string, number> = {
+    'ニコカラ': 0,
+    'カラオケ': 1,
+    '纯k自用': 2,
+    '卡拉OK': 3
+};
+const BILIBILI_TAG_MATCHERS: Record<(typeof BILIBILI_TAGS)[number], RegExp> = {
+    'ニコカラ': /(ニコカラ|nicokara)/i,
+    'カラオケ': /(カラオケ|karaoke)/i,
+    '纯k自用': /(纯k自用)/i,
+    '卡拉OK': /(卡拉OK|ktv字幕)/i
+};
+const WBI_MIXIN_KEY_ENC_TAB = [
+    46, 47, 18, 2, 53, 8, 23, 32,
+    15, 50, 10, 31, 58, 3, 45, 35,
+    27, 43, 5, 49, 33, 9, 42, 19,
+    29, 28, 14, 39, 12, 38, 41, 13,
+    37, 48, 7, 16, 24, 55, 40, 61,
+    26, 17, 0, 1, 60, 51, 30, 4,
+    22, 25, 54, 21, 56, 59, 6, 63,
+    57, 62, 11, 36, 20, 34, 44, 52
+] as const;
+
+type BiliSearchItem = {
+    bvid?: string
+    title?: string
+    pic?: string
+    author?: string
+}
+
+function stripHtml(input: string) {
+    return (input || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim();
+}
+
+function normalizeSearchText(input: string) {
+    return (input || '')
+        .toLowerCase()
+        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]/g, '');
+}
+
+function normalizeBilibiliPic(pic?: string) {
+    if (!pic) return '';
+    if (pic.startsWith('//')) return `https:${pic}`;
+    if (pic.startsWith('http://') || pic.startsWith('https://')) return pic;
+    return `https://${pic.replace(/^\/+/, '')}`;
+}
+
+function getMixinKey(orig: string) {
+    return WBI_MIXIN_KEY_ENC_TAB.map(i => orig[i]).join('').slice(0, 32);
+}
+
+function encWbi(params: Record<string, string | number>, imgKey: string, subKey: string) {
+    const mixinKey = getMixinKey(imgKey + subKey);
+    const sanitizedParams = Object.fromEntries(
+        Object.entries({
+            ...params,
+            wts: Math.floor(Date.now() / 1000)
+        }).map(([key, value]) => [
+            key,
+            `${value}`.replace(/[!'()*]/g, '')
+        ])
+    );
+    const query = new URLSearchParams(
+        Object.entries(sanitizedParams).sort(([a], [b]) => a.localeCompare(b))
+    ).toString();
+    const wRid = crypto.createHash('md5').update(query + mixinKey).digest('hex');
+    return `${query}&w_rid=${wRid}`;
+}
+
+async function getBilibiliCookie() {
+    const response = await axios.get('https://www.bilibili.com/', {
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER
+        }
+    });
+    const setCookie = response.headers['set-cookie'];
+    if (!Array.isArray(setCookie) || setCookie.length === 0) {
+        return 'buvid3=codex-search';
+    }
+    const cookies = setCookie
+        .map(cookie => cookie.split(';')[0])
+        .filter(Boolean);
+    if (!cookies.some(cookie => cookie.startsWith('buvid3='))) {
+        cookies.push('buvid3=codex-search');
+    }
+    return cookies.join('; ');
+}
+
+async function getBilibiliWbiKeys(cookie: string) {
+    const response = await axios.get('https://api.bilibili.com/x/web-interface/nav', {
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER,
+            'Cookie': cookie
+        }
+    });
+    const wbiImg = response.data?.data?.wbi_img;
+    const imgKey = wbiImg?.img_url?.split('/').pop()?.split('.')[0];
+    const subKey = wbiImg?.sub_url?.split('/').pop()?.split('.')[0];
+    if (!imgKey || !subKey) {
+        throw new Error('Failed to get bilibili wbi keys');
+    }
+    return { imgKey, subKey };
+}
+
+async function searchBilibiliVideosByKeyword(keyword: string, cookie: string, imgKey: string, subKey: string) {
+    const headers = {
+        'User-Agent': BILIBILI_USER_AGENT,
+        'Referer': BILIBILI_REFERER,
+        'Cookie': cookie
+    };
+    try {
+        const legacyResponse = await axios.get('https://api.bilibili.com/x/web-interface/search/type', {
+            params: {
+                search_type: 'video',
+                keyword,
+                page: 1
+            },
+            headers
+        });
+        if (legacyResponse.data?.code === 0) {
+            return (legacyResponse.data?.data?.result || []) as BiliSearchItem[];
+        }
+    } catch (error) {
+        ktvLogger.warn('Bilibili legacy search failed', keyword, error instanceof Error ? error.message : error);
+    }
+
+    const query = encWbi({
+        search_type: 'video',
+        keyword,
+        page: 1
+    }, imgKey, subKey);
+    const url = `https://api.bilibili.com/x/web-interface/wbi/search/type?${query}`;
+    const response = await axios.get(url, {
+        headers: {
+            ...headers
+        }
+    });
+    if (response.data?.code !== 0) {
+        throw new Error(`Bilibili search failed: ${response.data?.message || response.data?.code}`);
+    }
+    return (response.data?.data?.result || []) as BiliSearchItem[];
+}
+
+async function getBilibiliVideoParts(bvid: string) {
+    const response = await axios.get('https://api.bilibili.com/x/player/pagelist', {
+        params: { bvid },
+        headers: {
+            'User-Agent': BILIBILI_USER_AGENT,
+            'Referer': BILIBILI_REFERER
+        }
+    });
+    if (response.data?.code !== 0 || !Array.isArray(response.data?.data)) {
+        return [];
+    }
+    return response.data.data.map((item: any): BilibiliVideoPart => ({
+        page: item.page,
+        part: item.part || `P${item.page}`
+    }));
+}
+
+async function searchBilibiliKtvVideos(keyword: string) {
+    const trimmedKeyword = keyword.trim();
+    if (!trimmedKeyword) return [];
+
+    const cookie = await getBilibiliCookie();
+    const { imgKey, subKey } = await getBilibiliWbiKeys(cookie);
+    const mergedMap = new Map<string, BilibiliSearchVideo>();
+
+    await Promise.all(BILIBILI_TAGS.map(async (tag) => {
+        const searchKeyword = `${trimmedKeyword} ${tag}`;
+        try {
+            const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
+            results.slice(0, 8).forEach((item) => {
+                const bvid = item.bvid?.trim();
+                if (!bvid) return;
+                const current = mergedMap.get(bvid);
+                if (current) {
+                    const titleText = stripHtml(item.title || current.title || '');
+                    const matcher = BILIBILI_TAG_MATCHERS[tag];
+                    if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
+                    return;
+                }
+                const titleText = stripHtml(item.title || bvid);
+                const detectedTags = BILIBILI_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
+                mergedMap.set(bvid, {
+                    bvid,
+                    title: titleText,
+                    pic: normalizeBilibiliPic(item.pic),
+                    author: stripHtml(item.author || ''),
+                    // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
+                    // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
+                    tags: detectedTags.length ? [...detectedTags] : [],
+                    parts: []
+                });
+            });
+        } catch (error) {
+            ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
+        }
+    }));
+
+    const mergedResults = [...mergedMap.values()].slice(0, 20);
+    await Promise.all(mergedResults.map(async (item) => {
+        try {
+            const parts = await getBilibiliVideoParts(item.bvid);
+            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
+        } catch (error) {
+            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
+            item.parts = [{ page: 1, part: item.title }];
+        }
+    }));
+
+    return mergedResults;
+}
+
+function sortBilibiliSearchVideos(
+    items: BilibiliSearchVideo[],
+    keyword: string,
+    clickCounts: Record<string, number> = {}
+) {
+    const normalizedKeyword = normalizeSearchText(keyword);
+    return [...items].sort((a, b) => {
+        // Relevance-first: prevent "just has ニコカラ" results from outranking the actual song name.
+        const aScore = normalizedKeyword ? scoreBilibiliSearchVideo(a, keyword) : 0;
+        const bScore = normalizedKeyword ? scoreBilibiliSearchVideo(b, keyword) : 0;
+        if (aScore !== bScore) {
+            // If both are similarly relevant, prefer items that are explicitly tagged as karaoke-like.
+            // This avoids "normal MV/字幕版" beating a karaoke upload by a small score margin.
+            const scoreGap = Math.abs(aScore - bScore);
+            if (scoreGap <= 60) {
+                const aHasPreferredTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+                const bHasPreferredTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+                if (aHasPreferredTag !== bHasPreferredTag) return aHasPreferredTag ? -1 : 1;
+            }
+            return bScore - aScore;
+        }
+
+        const aClicks = clickCounts[a.bvid] || 0;
+        const bClicks = clickCounts[b.bvid] || 0;
+        if (aClicks !== bClicks) return bClicks - aClicks;
+
+        // Then use tag priority as a tiebreaker.
+        const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
+        if (aPriority !== bPriority) return aPriority - bPriority;
+
+        if (a.tags.length !== b.tags.length) return b.tags.length - a.tags.length;
+        return a.title.localeCompare(b.title, 'zh-Hans-CN');
+    });
+}
+
+function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
+    const normalizedKeyword = normalizeSearchText(keyword);
+    if (!normalizedKeyword) return 0;
+
+    const titleText = normalizeSearchText(item.title);
+    const tagsText = normalizeSearchText(item.tags.join(' '));
+    const partsText = normalizeSearchText(item.parts.map(part => part.part).join(' '));
+    const haystack = `${titleText} ${tagsText} ${partsText}`;
+
+    // Token-based relevance: tolerate minor wording differences (e.g. "de" vs "der").
+    // Only use title/parts for relevance; tags are too noisy for matching.
+    const normalizedTitleParts = `${titleText} ${partsText}`.trim();
+    if (!normalizedTitleParts) return 0;
+
+    const stopwords = new Set([
+        // EN common stopwords (keep small, just to avoid noisy matches)
+        'the', 'and', 'for', 'with', 'from', 'this', 'that', 'you', 'your', 'are', 'was', 'were', 'to', 'of', 'in', 'on', 'at',
+        // romanization artifacts / very common short words
+        'feat', 'ft',
+    ]);
+
+    const tokens = (keyword || '')
+        .toLowerCase()
+        .split(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]+/g)
+        .map(t => normalizeSearchText(t))
+        .filter(t => t.length >= 3 && !stopwords.has(t));
+
+    const tokenHits = tokens.length
+        ? tokens.reduce((acc, token) => acc + (normalizedTitleParts.includes(token) ? 1 : 0), 0)
+        : 0;
+
+    // 宁缺勿滥：filter aggressively before scoring.
+    // Accept if full keyword matches title/parts, otherwise require multi-token evidence.
+    const fullMatch = normalizedTitleParts.includes(normalizedKeyword);
+    if (!fullMatch) {
+        if (tokens.length === 0) return 0;
+        if (tokens.length === 1) {
+            // Single token queries are too ambiguous; require a strong signal.
+            if (!normalizedTitleParts.includes(tokens[0]) || tokens[0].length < 5) return 0;
+        } else if (tokens.length === 2) {
+            if (tokenHits < 2) return 0;
+        } else {
+            // 3+ tokens: require at least 2 hits, and at least one hit is a "long" token.
+            const longHit = tokens.some(t => t.length >= 5 && normalizedTitleParts.includes(t));
+            if (tokenHits < 2 || !longHit) return 0;
+        }
+    }
+
+    let score = 10;
+    if (titleText === normalizedKeyword) score += 200;
+    if (titleText.includes(normalizedKeyword)) score += 120;
+    if (partsText.includes(normalizedKeyword)) score += 50;
+    // tagsText intentionally excluded from matching; keep as small bonus only if keyword fully matches.
+    if (tagsText.includes(normalizedKeyword)) score += 10;
+
+    const firstIndex = haystack.indexOf(normalizedKeyword);
+    if (firstIndex >= 0) score += Math.max(0, 40 - firstIndex);
+    score += Math.max(0, 20 - Math.max(0, item.title.length - keyword.length));
+
+    // Token hits: reward each token matched in title/parts.
+    if (tokens.length) score += tokenHits * 35;
+    return score;
+}
+
+function filterBilibiliSearchVideosByRelevance(items: BilibiliSearchVideo[], keyword: string) {
+    return items.filter(item => scoreBilibiliSearchVideo(item, keyword) > 0);
+}
+
+function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
+    const merged = new Map<string, BilibiliSearchVideo>();
+    [...existing, ...incoming].forEach((item) => {
+        const current = merged.get(item.bvid);
+        if (!current) {
+            merged.set(item.bvid, {
+                ...item,
+                tags: [...item.tags],
+                parts: [...item.parts]
+            });
+            return;
+        }
+
+        current.title = current.title || item.title;
+        current.pic = current.pic || item.pic;
+        current.author = current.author || item.author;
+        current.tags = [...new Set([...current.tags, ...item.tags])];
+        const partMap = new Map(current.parts.map(part => [part.page, part]));
+        item.parts.forEach(part => {
+            if (!partMap.has(part.page)) partMap.set(part.page, part);
+        });
+        current.parts = [...partMap.values()].sort((a, b) => a.page - b.page);
+    });
+    return [...merged.values()];
+}
+
+function filterCachedBilibiliSearchVideos(items: BilibiliSearchVideo[], keyword: string, clickCounts: Record<string, number> = {}) {
+    return items
+        .map(item => ({
+            item,
+            clicks: clickCounts[item.bvid] || 0,
+            score: scoreBilibiliSearchVideo(item, keyword),
+            hasPreferredTag: item.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 2)
+        }))
+        .filter(entry => entry.score > 0 && (entry.hasPreferredTag || entry.clicks > 0))
+        .sort((a, b) => {
+            if (a.hasPreferredTag !== b.hasPreferredTag) return a.hasPreferredTag ? -1 : 1;
+            if (a.score !== b.score) return b.score - a.score;
+            if (a.clicks !== b.clicks) return b.clicks - a.clicks;
+            return 0;
+        })
+        .map(entry => entry.item);
+}
 
 /**
  * 解析 B23.TV 短链接并提取 BV 号
@@ -11,6 +378,29 @@ import { Storage } from "@/storage";
  */
 async function resolveBilibiliData(inputUrl: string) {
     let targetUrl = inputUrl;
+
+    // If it's already our internal protocol, just normalize and preserve page.
+    if (inputUrl.startsWith('bilibili://')) {
+        try {
+            const urlObj = new URL(inputUrl.replace('bilibili://', 'https://'));
+            const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
+            if (!bvMatch) return null;
+            const bvid = bvMatch[0];
+            const pageParam = urlObj.searchParams.get('page');
+            const parsedPageNum = pageParam !== null ? parseInt(pageParam, 10) : 0;
+            const hasValidPage = pageParam !== null && Number.isFinite(parsedPageNum);
+            const pageNum = hasValidPage ? Math.max(0, parsedPageNum) : 0;
+            return {
+                // Normalize to `page` (0-based) for Bilibili app deep link.
+                url: `bilibili://video/${bvid}${hasValidPage ? `?page=${pageNum}` : ''}`,
+                bvid,
+                // pNum is only used for display; keep it 1-based if present.
+                pNum: hasValidPage ? pageNum + 1 : 1
+            };
+        } catch {
+            // fall through
+        }
+    }
 
     if (inputUrl.includes('b23.tv')) {
         try {
@@ -37,6 +427,7 @@ async function resolveBilibiliData(inputUrl: string) {
         if (pParam) {
             const pNum = parseInt(pParam, 10);
             return {
+                // Convert web `p` (1-based) to app `page` (0-based).
                 url: `bilibili://video/${bvid}?page=${Math.max(0, pNum - 1)}`,
                 bvid: bvid,
                 pNum: pNum
@@ -354,4 +745,16 @@ const songListTools = {
     })
 }
 
-export { resolveBilibiliData, songOperation, getHash, songListTools };
+export {
+    filterCachedBilibiliSearchVideos,
+    filterBilibiliSearchVideosByRelevance,
+    mergeBilibiliSearchVideos,
+    normalizeSearchText,
+    resolveBilibiliData,
+    scoreBilibiliSearchVideo,
+    searchBilibiliKtvVideos,
+    sortBilibiliSearchVideos,
+    songOperation,
+    getHash,
+    songListTools
+};

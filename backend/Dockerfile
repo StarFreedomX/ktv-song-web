@@ -4,6 +4,13 @@ FROM node:22-alpine AS builder
 # 安装 pnpm
 RUN npm install -g pnpm
 
+ARG NPM_CONFIG_REGISTRY
+
+RUN if [ -n "${NPM_CONFIG_REGISTRY}" ]; then \
+        npm config set registry ${NPM_CONFIG_REGISTRY} && \
+        pnpm config set registry ${NPM_CONFIG_REGISTRY}; \
+    fi
+
 WORKDIR /app
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -22,7 +29,7 @@ RUN export PROJECT_ROOT=/app/backend/ && \
     rm -rf /app/backend/app-minimal
 
 # --- 阶段 2: 运行 ---
-FROM caomeiyouren/alpine-nodejs-minimize:1.0.0 AS runner
+FROM ghcr.io/starfreedomx/alpine-nodejs-minimize:1.0.0 AS runner
 WORKDIR /app
 
 # 设置环境变量

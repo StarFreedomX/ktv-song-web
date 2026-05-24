@@ -4,6 +4,13 @@ FROM node:22-alpine AS builder
 # 安装 pnpm
 RUN npm install -g pnpm
 
+ARG NPM_CONFIG_REGISTRY
+
+RUN if [ -n "${NPM_CONFIG_REGISTRY}" ]; then \
+        npm config set registry ${NPM_CONFIG_REGISTRY} && \
+        pnpm config set registry ${NPM_CONFIG_REGISTRY}; \
+    fi
+
 WORKDIR /app
 
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./

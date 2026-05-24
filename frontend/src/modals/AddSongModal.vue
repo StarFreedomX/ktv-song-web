@@ -3,7 +3,7 @@
         <div v-if="modelValue"
              class="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
              @click.self="handleClose">
-            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4">
+            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 flex flex-col max-h-[90dvh]">
                 <div class="flex items-center justify-between px-2">
                     <h3 class="text-xl font-black text-slate-800">
                         {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
@@ -12,6 +12,97 @@
                             class="clear-btn group">
                         <span class="text-xs font-bold">清空输入</span>
                     </button>
+                </div>
+
+                <div class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
+                <div class="space-y-1">
+                    <label class="modal-label">
+                        Bilibili KTV 搜索
+                    </label>
+                    <div class="flex gap-2">
+                        <input
+                            name="bilibili_search_keyword"
+                            autocomplete="on"
+                            :value="searchKeyword"
+                            @input="$emit('update:searchKeyword', $event.target.value)"
+                            @keyup.enter="$emit('search')"
+                            class="modal-search-input flex-1 px-4 py-3 rounded-2xl outline-none border-2 border-transparent transition text-sm"
+                            placeholder="输入歌名或歌曲关键词"
+                        >
+                        <button
+                            @click="$emit('search')"
+                            class="modal-search-btn shrink-0 px-4 py-3 rounded-2xl text-white text-sm font-bold transition disabled:opacity-50"
+                            :disabled="searchLoading"
+                        >
+                            {{ searchLoading ? '搜索中' : '搜索' }}
+                        </button>
+                    </div>
+                    <div v-if="searchResults.length" class="max-h-72 overflow-y-auto pr-1 space-y-2">
+                        <div
+                            v-for="item in searchResults"
+                            :key="item.bvid"
+                            class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2"
+                        >
+                            <div class="flex gap-3">
+                                <img
+                                    :src="item.pic"
+                                    :alt="item.title"
+                                    referrerpolicy="no-referrer"
+                                    loading="lazy"
+                                    decoding="async"
+                                    class="w-20 h-12 rounded-xl object-cover bg-slate-200 shrink-0"
+                                    @error="onImgError($event, item)"
+                                >
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-bold text-slate-800 line-clamp-2">{{ item.title }}</div>
+                                    <div v-if="item.author" class="mt-0.5 text-[11px] text-slate-600 font-semibold truncate">
+                                        UP主：{{ item.author }}
+                                    </div>
+                                    <div class="mt-1 text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        <span
+                                            v-for="tag in item.tags"
+                                            :key="tag"
+                                            class="modal-tag px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                                        >
+                                            {{ tag }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                v-if="item.parts?.length <= 1"
+                                @click="$emit('select-result', item)"
+                                class="modal-primary-btn w-full px-3 py-2 rounded-xl text-white text-sm font-bold transition"
+                            >
+                                一键点歌
+                            </button>
+
+                            <div v-else-if="item.parts?.length > 1" class="space-y-2">
+                                <button
+                                    @click="$emit('toggle-parts', item.bvid)"
+                                    class="modal-secondary-btn w-full px-3 py-2 rounded-xl bg-white border text-slate-700 text-sm font-bold transition"
+                                >
+                                    {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts?.length})` }}
+                                </button>
+                                <div v-if="expandedBvid === item.bvid" class="space-y-1">
+                                    <button
+                                        v-for="part in item.parts"
+                                        :key="`${item.bvid}-${part.page}`"
+                                        @click="$emit('select-part', { item, part })"
+                                        class="modal-part-btn w-full text-left px-3 py-2 rounded-xl bg-white border transition"
+                                    >
+                                        <div class="modal-part-index text-xs font-black">P{{ part.page }}</div>
+                                        <div class="text-sm text-slate-700 font-semibold truncate">{{ part.part }}</div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="searchKeyword && !searchLoading" class="text-xs text-slate-400 px-1">
+                        暂无搜索结果
+                    </div>
                 </div>
 
                 <div class="space-y-1">
@@ -36,8 +127,9 @@
                            class="modal-input"
                            placeholder="跳转链接">
                 </div>
+                </div>
 
-                <div class="flex gap-3 pt-2">
+                <div class="flex gap-3 pt-4 flex-shrink-0">
                     <ComfirmButton
                         type="secondary"
                         class="flex-1"
@@ -65,6 +157,16 @@ import ComfirmButton from './components/ComfirmButton.vue';
 const props = defineProps({
     modelValue: Boolean,          // 控制显隐
     isAddingToFavorites: Boolean, // 模式切换
+    searchKeyword: String,
+    searchLoading: Boolean,
+    searchResults: {
+        type: Array,
+        default: () => []
+    },
+    expandedBvid: {
+        type: [String, null],
+        default: null
+    },
     autoInput: String,            // 自动输入的内容
     form: Object                  // 表单对象 {title, url}
 });
@@ -72,8 +174,13 @@ const props = defineProps({
 const emit = defineEmits([
     'update:modelValue',
     'update:isAddingToFavorites',
+    'update:searchKeyword',
     'update:autoInput',
     'update:form',
+    'search',
+    'toggle-parts',
+    'select-result',
+    'select-part',
     'auto-recognize',
     'submit'
 ]);
@@ -92,6 +199,13 @@ const onAutoInput = (e) => {
     const value = e.target.value;
     emit('update:autoInput', value);
     emit('auto-recognize', value);
+};
+
+const onImgError = (event, item) => {
+    const img = event?.target;
+    if (!img || !item?.picProxy) return;
+    if (typeof img.src === 'string' && img.src.includes('/api/bilibiliImage')) return;
+    img.src = item.picProxy;
 };
 </script>
 
@@ -130,6 +244,52 @@ const onAutoInput = (e) => {
 .modal-input:focus {
     @apply ring-2;
     ring-color: var(--brand-color-light);
+}
+
+.modal-search-input {
+    background-color: var(--brand-color-bg);
+}
+.modal-search-input:focus {
+    border-color: var(--brand-color-light);
+}
+
+.modal-search-btn {
+    background-color: var(--brand-color);
+}
+.modal-search-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-tag {
+    background-color: var(--brand-color-light);
+    color: var(--brand-color);
+}
+
+.modal-primary-btn {
+    background-color: var(--brand-color);
+}
+.modal-primary-btn:hover {
+    background-color: var(--brand-color-dark);
+}
+
+.modal-secondary-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-secondary-btn:hover {
+    border-color: var(--brand-color-light);
+    color: var(--brand-color);
+    background-color: var(--brand-color-bg);
+}
+
+.modal-part-btn {
+    border-color: var(--brand-color-light);
+}
+.modal-part-btn:hover {
+    border-color: var(--brand-color-light);
+    background-color: var(--brand-color-bg);
+}
+.modal-part-index {
+    color: var(--brand-color);
 }
 
 </style>
