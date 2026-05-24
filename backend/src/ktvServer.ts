@@ -550,6 +550,16 @@ export function runKTVServer(storage: Storage) {
                     await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, remoteOrExact, SEARCH_CACHE_EXPIRE_TIME);
                 }
 
+                /*TODO
+                    /api/bilibiliSearch 在缓存回写时会把 mergedCatalog 整体写回 Redis，
+                    但没有任何上限或裁剪逻辑（mergeBilibiliSearchVideos(catalog, remoteOrExact) 会持续累加）。
+                    在搜索频繁/关键词多的情况下，这个全局目录可能无限增长，
+                    导致 Redis 单 key 体积膨胀、getSearchClickCounts(mergedCatalog) 的 mget 变大、
+                    以及每次请求合并/排序的 CPU 开销上升。
+                    建议在写入前对 catalog 做容量控制
+                    （例如只保留 Top-N 的高分/高点击/有优先 tag 的条目，或按时间/点击做淘汰），
+                    并避免对超大 catalog 做全量 clickCounts 拉取。
+                 */
                 const mergedCatalog = mergeBilibiliSearchVideos(catalog, remoteOrExact);
                 await saveSearchCatalog(mergedCatalog);
 

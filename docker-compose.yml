@@ -14,10 +14,10 @@ services:
             HOST: 0.0.0.0
             REDIS_URL: redis://redis:6379
             DEBUG_MODE: info
-            CACHE_DATA_EXPIRE_TIME: 24h 
+            CACHE_DATA_EXPIRE_TIME: 24h
             CACHE_OP_EXPIRE_TIME: 5m
             SEARCH_CACHE_EXPIRE_TIME: 24h #用户单次搜索结果的缓存过期时间，过期后再次搜索会重新计算
-            SEARCH_CATALOG_EXPIRE_TIME: 30d #对于匹配到的歌曲的缓存过期时间，过期后再次搜索会重新计算
+            SEARCH_CATALOG_EXPIRE_TIME: 14d #对于匹配到的歌曲的缓存过期时间，过期后再次搜索会重新计算
             IMAGE_CACHE_EXPIRE_TIME: 24h
         depends_on:
             - redis

@@ -44,7 +44,7 @@ function stripHtml(input: string) {
 function normalizeSearchText(input: string) {
     return (input || '')
         .toLowerCase()
-        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;]/g, '');
+        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]/g, '');
 }
 
 function normalizeBilibiliPic(pic?: string) {
@@ -282,7 +282,7 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
 
     const tokens = (keyword || '')
         .toLowerCase()
-        .split(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;]+/g)
+        .split(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]+/g)
         .map(t => normalizeSearchText(t))
         .filter(t => t.length >= 3 && !stopwords.has(t));
 
@@ -387,13 +387,15 @@ async function resolveBilibiliData(inputUrl: string) {
             if (!bvMatch) return null;
             const bvid = bvMatch[0];
             const pageParam = urlObj.searchParams.get('page');
-            const pageNum = pageParam ? parseInt(pageParam, 10) : 0;
+            const parsedPageNum = pageParam !== null ? parseInt(pageParam, 10) : 0;
+            const hasValidPage = pageParam !== null && Number.isFinite(parsedPageNum);
+            const pageNum = hasValidPage ? Math.max(0, parsedPageNum) : 0;
             return {
                 // Normalize to `page` (0-based) for Bilibili app deep link.
-                url: `bilibili://video/${bvid}${pageParam ? `?page=${pageNum}` : ''}`,
+                url: `bilibili://video/${bvid}${hasValidPage ? `?page=${pageNum}` : ''}`,
                 bvid,
                 // pNum is only used for display; keep it 1-based if present.
-                pNum: pageParam ? pageNum : 0
+                pNum: hasValidPage ? pageNum + 1 : 1
             };
         } catch {
             // fall through
