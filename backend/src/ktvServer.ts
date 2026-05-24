@@ -54,6 +54,7 @@ export function runKTVServer(storage: Storage) {
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
+    const BVID_REGEX = /^BV[a-zA-Z0-9]{10}$/;
     const CACHE_EXPIRE_TIME = parseDurationMs(process.env.CACHE_DATA_EXPIRE_TIME, DEFAULT_CACHE_DATA_EXPIRE_TIME);
     const CACHE_OP_EXPIRE_TIME = parseDurationMs(process.env.CACHE_OP_EXPIRE_TIME, DEFAULT_CACHE_OP_EXPIRE_TIME);
     const SEARCH_CACHE_EXPIRE_TIME = parseDurationMs(process.env.SEARCH_CACHE_EXPIRE_TIME, DEFAULT_SEARCH_CACHE_EXPIRE_TIME);
@@ -574,13 +575,17 @@ export function runKTVServer(storage: Storage) {
         if (!bvid) {
             koaCtx.body = { success: false, msg: 'Missing bvid' };
             return;
-        }else if (!/^BV[a-zA-Z0-9]{10}$/.test(bvid)) {
+        } else if (!BVID_REGEX.test(bvid)) {
             koaCtx.body = { success: false, msg: 'Invalid bvid' };
             return;
         }
 
-        const count = (await storage.get<number>(SEARCH_CLICK_NAMESPACE, bvid)) || 0;
-        await storage.set(SEARCH_CLICK_NAMESPACE, bvid, count + 1, 365 * 24 * 60 * 60 * 1000);
+        const updated = await storage.increment(SEARCH_CLICK_NAMESPACE, bvid, SEARCH_CLICK_TTL_MS);
+        if (typeof updated !== 'number') {
+            koaCtx.status = 503;
+            koaCtx.body = { success: false, msg: 'Click counter unavailable' };
+            return;
+        }
         koaCtx.body = { success: true };
     });
 
