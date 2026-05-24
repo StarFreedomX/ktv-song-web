@@ -67,6 +67,22 @@ export class Storage {
         }, delay);
     }
 
+    private parseStoredValue<T>(raw: string): { value?: T; expired?: boolean } {
+        try {
+            const parsed: unknown = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && 'value' in parsed) {
+                const obj = parsed as LegacyStoredValue<T>;
+                if (obj.expireAt && Date.now() > obj.expireAt) {
+                    return { expired: true };
+                }
+                return { value: obj.value };
+            }
+            return { value: parsed as T };
+        } catch {
+            return {};
+        }
+    }
+
     async set<T>(namespace: string, key: string, value: T, ttlMs?: number) {
         if (!this.client.isOpen) return;
         const redisKey = `${namespace}_${key}`;
@@ -84,20 +100,59 @@ export class Storage {
         const raw = await this.client.get(redisKey);
         if (!raw || typeof raw !== 'string') return undefined;
 
-        try {
-            const parsed: unknown = JSON.parse(raw);
-            if (parsed && typeof parsed === 'object' && 'value' in parsed) {
-                const obj = parsed as LegacyStoredValue<T>;
-                if (obj.expireAt && Date.now() > obj.expireAt) {
-                    await this.client.del(redisKey);
-                    return undefined;
-                }
-                return obj.value;
-            }
-            return parsed as T;
-        } catch {
+        const { value, expired } = this.parseStoredValue<T>(raw);
+        if (expired) {
+            await this.client.del(redisKey);
             return undefined;
         }
+        return value;
+    }
+
+    async getMany<T>(namespace: string, keys: string[]): Promise<Record<string, T | undefined>> {
+        if (!this.client.isOpen) return {};
+        if (!Array.isArray(keys) || keys.length === 0) return {};
+
+        const redisKeys = keys.map(key => `${namespace}_${key}`);
+        const rawValues = await this.client.mGet(redisKeys);
+        const results: Record<string, T | undefined> = {};
+        const expiredKeys: string[] = [];
+
+        rawValues.forEach((raw, index) => {
+            const key = keys[index];
+            if (!raw || typeof raw !== 'string') {
+                results[key] = undefined;
+                return;
+            }
+            const { value, expired } = this.parseStoredValue<T>(raw);
+            if (expired) {
+                expiredKeys.push(redisKeys[index]);
+                results[key] = undefined;
+                return;
+            }
+            results[key] = value;
+        });
+
+        if (expiredKeys.length > 0) {
+            await this.client.unlink(expiredKeys);
+        }
+        return results;
+    }
+
+    async increment(namespace: string, key: string, ttlMs?: number): Promise<number | undefined> {
+        if (!this.client.isOpen) return undefined;
+        const redisKey = `${namespace}_${key}`;
+
+        if (typeof ttlMs === 'number' && ttlMs > 0) {
+            const results = await this.client.multi()
+                .incr(redisKey)
+                .pExpire(redisKey, ttlMs)
+                .exec();
+            const value = Array.isArray(results) ? results[0] : undefined;
+            return typeof value === 'number' ? value : (typeof value === 'string' ? Number(value) : undefined);
+        }
+
+        const value = await this.client.incr(redisKey);
+        return typeof value === 'number' ? value : Number(value);
     }
 
     async remove(namespace: string, key: string) {
