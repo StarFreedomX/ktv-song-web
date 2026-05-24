@@ -51,6 +51,9 @@ export function runKTVServer(storage: Storage) {
     const DEFAULT_IMAGE_CACHE_EXPIRE_TIME = 24 * 60 * 60 * 1000;
     const DEFAULT_IMAGE_CACHE_MAX_SIZE = 50 * 1024 * 1024;
     const DEFAULT_IMAGE_CACHE_MAX = 500;
+    const DEFAULT_IMAGE_PROXY_MAX_BYTES = 5 * 1024 * 1024;
+    const DEFAULT_IMAGE_PROXY_TIMEOUT_MS = 8000;
+    const SEARCH_CLICK_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
     // 校验 roomId
     const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
@@ -63,6 +66,8 @@ export function runKTVServer(storage: Storage) {
     const IMAGE_CACHE_MAX_SIZE = Number(process.env.IMAGE_CACHE_MAX_SIZE) || DEFAULT_IMAGE_CACHE_MAX_SIZE;
     const IMAGE_CACHE_MAX = Number(process.env.IMAGE_CACHE_MAX) || DEFAULT_IMAGE_CACHE_MAX;
     const ENABLE_BILIBILI_IMAGE_PROXY = process.env.ENABLE_BILIBILI_IMAGE_PROXY === 'true';
+    const IMAGE_PROXY_MAX_BYTES = Number(process.env.IMAGE_PROXY_MAX_BYTES) || DEFAULT_IMAGE_PROXY_MAX_BYTES;
+    const IMAGE_PROXY_TIMEOUT_MS = Number(process.env.IMAGE_PROXY_TIMEOUT_MS) || DEFAULT_IMAGE_PROXY_TIMEOUT_MS;
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
@@ -531,8 +536,9 @@ export function runKTVServer(storage: Storage) {
         try {
             const cacheKey = getSearchCacheKey(keyword);
             const catalog = await getSearchCatalog();
-            const catalogClickCounts = await getSearchClickCounts(catalog);
-            const localMatches = filterCachedBilibiliSearchVideos(catalog, keyword, catalogClickCounts);
+            const catalogMatches = filterBilibiliSearchVideosByRelevance(catalog, keyword);
+            const catalogClickCounts = await getSearchClickCounts(catalogMatches);
+            const localMatches = filterCachedBilibiliSearchVideos(catalogMatches, keyword, catalogClickCounts);
 
             let items: BilibiliSearchVideo[] = localMatches.slice(0, 20);
 
@@ -633,6 +639,10 @@ export function runKTVServer(storage: Storage) {
         try {
             const response = await axios.get<ArrayBuffer>(imageUrl, {
                 responseType: 'arraybuffer',
+                timeout: IMAGE_PROXY_TIMEOUT_MS,
+                maxContentLength: IMAGE_PROXY_MAX_BYTES,
+                maxBodyLength: IMAGE_PROXY_MAX_BYTES,
+                validateStatus: (status) => status >= 200 && status < 300,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36',
                     'Referer': 'https://www.bilibili.com/'
@@ -640,6 +650,11 @@ export function runKTVServer(storage: Storage) {
             });
             const buffer = Buffer.from(response.data);
             const contentType = response.headers['content-type'] || 'image/jpeg';
+            if (!contentType.startsWith('image/')) {
+                koaCtx.status = 502;
+                koaCtx.body = 'Image fetch failed';
+                return;
+            }
             imageCache.set(imageUrl, {
                 buffer,
                 contentType,
