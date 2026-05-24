@@ -81,12 +81,14 @@ export function runKTVServer(storage: Storage) {
     const SEARCH_CATALOG_KEY = 'global';
 
     const getSearchClickCounts = async (items: BilibiliSearchVideo[]) => {
-        const counts: Record<string, number> = {};
-        await Promise.all(items.map(async (item) => {
-            const count = await storage.get<number>(SEARCH_CLICK_NAMESPACE, item.bvid);
-            counts[item.bvid] = Number(count) || 0;
-        }));
-        return counts;
+        const bvids = [...new Set(items.map(item => item.bvid).filter(Boolean))];
+        if (bvids.length === 0) return {};
+
+        const counts = await storage.getMany<number>(SEARCH_CLICK_NAMESPACE, bvids);
+        return bvids.reduce<Record<string, number>>((acc, bvid) => {
+            acc[bvid] = Number(counts[bvid]) || 0;
+            return acc;
+        }, {});
     };
 
     const getSearchCatalog = async () => {
