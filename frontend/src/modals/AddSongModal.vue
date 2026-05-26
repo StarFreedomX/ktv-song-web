@@ -3,7 +3,7 @@
         <div v-if="modelValue"
              class="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
              @click.self="handleClose">
-            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 flex flex-col max-h-[90dvh]">
+            <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4">
                 <div class="flex items-center justify-between px-2">
                     <h3 class="text-xl font-black text-slate-800">
                         {{ isAddingToFavorites ? '添加收藏' : '添加新歌曲' }}
@@ -14,7 +14,6 @@
                     </button>
                 </div>
 
-                <div class="flex-1 min-h-0 overflow-y-auto pr-1 space-y-4">
                 <div class="space-y-1">
                     <label class="modal-label">
                         Bilibili KTV 搜索
@@ -36,72 +35,6 @@
                         >
                             {{ searchLoading ? '搜索中' : '搜索' }}
                         </button>
-                    </div>
-                    <div v-if="searchResults.length" class="max-h-72 overflow-y-auto pr-1 space-y-2">
-                        <div
-                            v-for="item in searchResults"
-                            :key="item.bvid"
-                            class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 space-y-2"
-                        >
-                            <div class="flex gap-3">
-                                <img
-                                    :src="item.pic"
-                                    :alt="item.title"
-                                    referrerpolicy="no-referrer"
-                                    loading="lazy"
-                                    decoding="async"
-                                    class="w-20 h-12 rounded-xl object-cover bg-slate-200 shrink-0"
-                                    @error="onImgError($event, item)"
-                                >
-                                <div class="min-w-0 flex-1">
-                                    <div class="text-sm font-bold text-slate-800 line-clamp-2">{{ item.title }}</div>
-                                    <div v-if="item.author" class="mt-0.5 text-[11px] text-slate-600 font-semibold truncate">
-                                        UP主：{{ item.author }}
-                                    </div>
-                                    <div class="mt-1 text-[11px] text-slate-500 font-semibold">{{ item.bvid }}</div>
-                                    <div class="mt-1 flex flex-wrap gap-1">
-                                        <span
-                                            v-for="tag in item.tags"
-                                            :key="tag"
-                                            class="modal-tag px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                                        >
-                                            {{ tag }}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button
-                                v-if="item.parts?.length <= 1"
-                                @click="$emit('select-result', item)"
-                                class="modal-primary-btn w-full px-3 py-2 rounded-xl text-white text-sm font-bold transition"
-                            >
-                                一键点歌
-                            </button>
-
-                            <div v-else-if="item.parts?.length > 1" class="space-y-2">
-                                <button
-                                    @click="$emit('toggle-parts', item.bvid)"
-                                    class="modal-secondary-btn w-full px-3 py-2 rounded-xl bg-white border text-slate-700 text-sm font-bold transition"
-                                >
-                                    {{ expandedBvid === item.bvid ? '收起分P' : `选择分P (${item.parts?.length})` }}
-                                </button>
-                                <div v-if="expandedBvid === item.bvid" class="space-y-1">
-                                    <button
-                                        v-for="part in item.parts"
-                                        :key="`${item.bvid}-${part.page}`"
-                                        @click="$emit('select-part', { item, part })"
-                                        class="modal-part-btn w-full text-left px-3 py-2 rounded-xl bg-white border transition"
-                                    >
-                                        <div class="modal-part-index text-xs font-black">P{{ part.page }}</div>
-                                        <div class="text-sm text-slate-700 font-semibold truncate">{{ part.part }}</div>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div v-else-if="searchKeyword && !searchLoading" class="text-xs text-slate-400 px-1">
-                        暂无搜索结果
                     </div>
                 </div>
 
@@ -127,9 +60,8 @@
                            class="modal-input"
                            placeholder="跳转链接">
                 </div>
-                </div>
 
-                <div class="flex gap-3 pt-4 flex-shrink-0">
+                <div class="flex gap-3 pt-2">
                     <ComfirmButton
                         type="secondary"
                         class="flex-1"
@@ -159,14 +91,6 @@ const props = defineProps({
     isAddingToFavorites: Boolean, // 模式切换
     searchKeyword: String,
     searchLoading: Boolean,
-    searchResults: {
-        type: Array,
-        default: () => []
-    },
-    expandedBvid: {
-        type: [String, null],
-        default: null
-    },
     autoInput: String,            // 自动输入的内容
     form: Object                  // 表单对象 {title, url}
 });
