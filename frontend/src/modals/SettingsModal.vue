@@ -14,8 +14,8 @@
                         <SettingText
                             title="点歌台名称"
                             action-text="修改"
-                            :model-value="draft.ktvName"
-                            @update:model-value="val => draft.ktvName = val"
+                            :model-value="draft.nickname"
+                            @update:model-value="val => draft.nickname = val"
                         />
 
                         <SettingSegment
