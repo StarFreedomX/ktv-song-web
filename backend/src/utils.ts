@@ -229,7 +229,7 @@ async function searchBilibiliKtvVideos(keyword: string) {
         (async () => {
             try {
                 const results = await searchBilibiliVideosByKeyword(trimmedKeyword, cookie, imgKey, subKey);
-                results.slice(0, 10).forEach(item => {
+                results.slice(0, 20).forEach(item => {
                     const bvid = item.bvid?.trim();
                     if (bvid) directBvids.add(bvid);
                     addToMap(item);
@@ -242,7 +242,7 @@ async function searchBilibiliKtvVideos(keyword: string) {
             const searchKeyword = `${trimmedKeyword} ${tag}`;
             try {
                 const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
-                results.slice(0, 8).forEach(item => addToMap(item, tag));
+                results.slice(0, 20).forEach(item => addToMap(item, tag));
             } catch (error) {
                 ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
             }
@@ -250,7 +250,7 @@ async function searchBilibiliKtvVideos(keyword: string) {
     ]);
 
     // Parts are fetched later (after relevance filter) to avoid pagelist calls on discarded items.
-    return { items: [...mergedMap.values()].slice(0, 40), directBvids };
+    return { items: [...mergedMap.values()].slice(0, 80), directBvids };
 }
 
 function sortBilibiliSearchVideos(
