@@ -229,9 +229,9 @@ async function searchBilibiliKtvVideos(keyword: string) {
         (async () => {
             try {
                 const results = await searchBilibiliVideosByKeyword(trimmedKeyword, cookie, imgKey, subKey);
-                results.slice(0, 20).forEach(item => {
+                results.forEach((item, idx) => {
                     const bvid = item.bvid?.trim();
-                    if (bvid) directBvids.add(bvid);
+                    if (bvid && idx < 10) directBvids.add(bvid);
                     addToMap(item);
                 });
             } catch (error) {
