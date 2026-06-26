@@ -38,7 +38,16 @@ type BiliSearchItem = {
 }
 
 function stripHtml(input: string) {
-    return (input || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim();
+    return (input || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+        .trim();
 }
 
 function normalizeSearchText(input: string) {
