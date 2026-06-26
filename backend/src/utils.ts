@@ -44,7 +44,10 @@ function stripHtml(input: string) {
 function normalizeSearchText(input: string) {
     return (input || '')
         .toLowerCase()
-        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]/g, '');
+        // Include fullwidth variants (／ ～ ·) and ideographic space (U+3000) which
+        // are common B站 title separators but blocked substring matching (e.g.
+        // "Lemon／米津玄師" would not match keyword "lemon米津玄師").
+        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;／～·　・×♪♫★☆×]/g, '');
 }
 
 function normalizeBilibiliPic(pic?: string) {
