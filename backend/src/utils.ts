@@ -174,11 +174,14 @@ async function getBilibiliVideoParts(bvid: string) {
 
 async function searchBilibiliKtvVideos(keyword: string) {
     const trimmedKeyword = keyword.trim();
-    if (!trimmedKeyword) return [];
+    if (!trimmedKeyword) return { items: [], directBvids: new Set<string>() };
 
     const cookie = await getBilibiliCookie();
     const { imgKey, subKey } = await getBilibiliWbiKeys(cookie);
     const mergedMap = new Map<string, BilibiliSearchVideo>();
+    // Track bvids returned by the direct (no-tag) search — these bypass the relevance filter
+    // because B站's own ranking is already a relevance signal (handles romaji↔kana, etc.)
+    const directBvids = new Set<string>();
 
     const addToMap = (item: BiliSearchItem, tag?: (typeof BILIBILI_TAGS)[number]) => {
         const bvid = item.bvid?.trim();
@@ -207,12 +210,16 @@ async function searchBilibiliKtvVideos(keyword: string) {
     };
 
     await Promise.all([
-        // Direct keyword search (no tag suffix) — ensures the most relevant video is always
-        // fetched even when it doesn't rank in the top-8 of any tag-specific query.
+        // Direct keyword search (no tag suffix): B站's own ranking is a relevance signal, so
+        // results here bypass our strict token filter (handles romaji↔kana cross-script queries).
         (async () => {
             try {
                 const results = await searchBilibiliVideosByKeyword(trimmedKeyword, cookie, imgKey, subKey);
-                results.slice(0, 10).forEach(item => addToMap(item));
+                results.slice(0, 10).forEach(item => {
+                    const bvid = item.bvid?.trim();
+                    if (bvid) directBvids.add(bvid);
+                    addToMap(item);
+                });
             } catch (error) {
                 ktvLogger.warn('Bilibili direct search failed', trimmedKeyword, error instanceof Error ? error.message : error);
             }
@@ -228,18 +235,8 @@ async function searchBilibiliKtvVideos(keyword: string) {
         })
     ]);
 
-    const mergedResults = [...mergedMap.values()].slice(0, 25);
-    await Promise.all(mergedResults.map(async (item) => {
-        try {
-            const parts = await getBilibiliVideoParts(item.bvid);
-            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
-        } catch (error) {
-            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
-            item.parts = [{ page: 1, part: item.title }];
-        }
-    }));
-
-    return mergedResults;
+    // Parts are fetched later (after relevance filter) to avoid pagelist calls on discarded items.
+    return { items: [...mergedMap.values()].slice(0, 40), directBvids };
 }
 
 function sortBilibiliSearchVideos(
@@ -249,26 +246,25 @@ function sortBilibiliSearchVideos(
 ) {
     const normalizedKeyword = normalizeSearchText(keyword);
     return [...items].sort((a, b) => {
-        // Relevance-first: prevent "just has ニコカラ" results from outranking the actual song name.
         const aScore = normalizedKeyword ? scoreBilibiliSearchVideo(a, keyword) : 0;
         const bScore = normalizedKeyword ? scoreBilibiliSearchVideo(b, keyword) : 0;
-        if (aScore !== bScore) {
-            // If both are similarly relevant, prefer items that are explicitly tagged as karaoke-like.
-            // This avoids "normal MV/字幕版" beating a karaoke upload by a small score margin.
-            const scoreGap = Math.abs(aScore - bScore);
-            if (scoreGap <= 60) {
-                const aHasPreferredTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
-                const bHasPreferredTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
-                if (aHasPreferredTag !== bHasPreferredTag) return aHasPreferredTag ? -1 : 1;
-            }
-            return bScore - aScore;
-        }
 
+        // Tier 1: KTV-tagged videos always beat untagged ones.
+        // The relevance filter already guarantees all items here are relevant to the query,
+        // so it is safe to unconditionally prefer the karaoke format over a shorter-title
+        // non-KTV result (e.g. a drum-score video that scores higher due to title length).
+        const aHasTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+        const bHasTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+        if (aHasTag !== bHasTag) return aHasTag ? -1 : 1;
+
+        // Tier 2: within the same tag-tier, rank by relevance score.
+        if (aScore !== bScore) return bScore - aScore;
+
+        // Tiebreakers: click count → tag priority → tag count → title
         const aClicks = clickCounts[a.bvid] || 0;
         const bClicks = clickCounts[b.bvid] || 0;
         if (aClicks !== bClicks) return bClicks - aClicks;
 
-        // Then use tag priority as a tiebreaker.
         const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
         const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
         if (aPriority !== bPriority) return aPriority - bPriority;
@@ -342,8 +338,27 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
     return score;
 }
 
-function filterBilibiliSearchVideosByRelevance(items: BilibiliSearchVideo[], keyword: string) {
-    return items.filter(item => scoreBilibiliSearchVideo(item, keyword) > 0);
+function filterBilibiliSearchVideosByRelevance(
+    items: BilibiliSearchVideo[],
+    keyword: string,
+    directBvids: Set<string> = new Set()
+) {
+    // Direct-search results (from plain keyword, no tag suffix) are trusted as relevant by B站's
+    // own ranking and bypass our token filter. This handles cross-script queries (e.g. romaji
+    // input matching a Japanese-kana title) where our token matching would otherwise return 0.
+    return items.filter(item => directBvids.has(item.bvid) || scoreBilibiliSearchVideo(item, keyword) > 0);
+}
+
+async function fetchBilibiliVideoParts(items: BilibiliSearchVideo[]): Promise<void> {
+    await Promise.all(items.map(async (item) => {
+        try {
+            const parts = await getBilibiliVideoParts(item.bvid);
+            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
+        } catch (error) {
+            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
+            item.parts = [{ page: 1, part: item.title }];
+        }
+    }));
 }
 
 function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
@@ -765,6 +780,7 @@ const songListTools = {
 }
 
 export {
+    fetchBilibiliVideoParts,
     filterCachedBilibiliSearchVideos,
     filterBilibiliSearchVideosByRelevance,
     mergeBilibiliSearchVideos,

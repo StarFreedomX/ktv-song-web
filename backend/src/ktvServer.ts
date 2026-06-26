@@ -7,7 +7,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 const DURATION_MULTIPLIERS = {
@@ -547,10 +547,11 @@ export function runKTVServer(storage: Storage) {
                 const fromSearchCache = !!remoteOrExact?.length;
                 if (!remoteOrExact?.length) {
                     ktvLogger.info(`[Search] calling Bilibili API for "${keyword}"`);
-                    remoteOrExact = await searchBilibiliKtvVideos(keyword);
-                    const beforeFilter = remoteOrExact.length;
-                    remoteOrExact = filterBilibiliSearchVideosByRelevance(remoteOrExact, keyword);
-                    ktvLogger.info(`[Search] API raw=${beforeFilter} after-relevance-filter=${remoteOrExact.length}`);
+                    const { items: rawItems, directBvids } = await searchBilibiliKtvVideos(keyword);
+                    const beforeFilter = rawItems.length;
+                    remoteOrExact = filterBilibiliSearchVideosByRelevance(rawItems, keyword, directBvids);
+                    ktvLogger.info(`[Search] API raw=${beforeFilter} direct=${directBvids.size} after-filter=${remoteOrExact.length}`);
+                    await fetchBilibiliVideoParts(remoteOrExact);
                     await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, remoteOrExact, SEARCH_CACHE_EXPIRE_TIME);
                 } else {
                     ktvLogger.info(`[Search] search-cache hit for "${cacheKey}" items=${remoteOrExact.length}`);
