@@ -536,18 +536,24 @@ export function runKTVServer(storage: Storage) {
         try {
             const cacheKey = getSearchCacheKey(keyword);
             const catalog = await getSearchCatalog();
-            const catalogMatches = filterBilibiliSearchVideosByRelevance(catalog, keyword);
-            const catalogClickCounts = await getSearchClickCounts(catalogMatches);
-            const localMatches = filterCachedBilibiliSearchVideos(catalogMatches, keyword, catalogClickCounts);
+            const catalogClickCounts = await getSearchClickCounts(catalog);
+            const localMatches = filterCachedBilibiliSearchVideos(catalog, keyword, catalogClickCounts);
+            ktvLogger.info(`[Search] keyword="${keyword}" cacheKey="${cacheKey}" catalog=${catalog.length} localMatches=${localMatches.length}`);
 
             let items: BilibiliSearchVideo[] = localMatches.slice(0, 20);
 
             if (items.length < 8) {
                 let remoteOrExact = await storage.get<BilibiliSearchVideo[]>(SEARCH_CACHE_NAMESPACE, cacheKey);
+                const fromSearchCache = !!remoteOrExact?.length;
                 if (!remoteOrExact?.length) {
+                    ktvLogger.info(`[Search] calling Bilibili API for "${keyword}"`);
                     remoteOrExact = await searchBilibiliKtvVideos(keyword);
+                    const beforeFilter = remoteOrExact.length;
                     remoteOrExact = filterBilibiliSearchVideosByRelevance(remoteOrExact, keyword);
+                    ktvLogger.info(`[Search] API raw=${beforeFilter} after-relevance-filter=${remoteOrExact.length}`);
                     await storage.set(SEARCH_CACHE_NAMESPACE, cacheKey, remoteOrExact, SEARCH_CACHE_EXPIRE_TIME);
+                } else {
+                    ktvLogger.info(`[Search] search-cache hit for "${cacheKey}" items=${remoteOrExact.length}`);
                 }
 
                 /*TODO
@@ -567,10 +573,14 @@ export function runKTVServer(storage: Storage) {
                 const refreshedLocalMatches = filterCachedBilibiliSearchVideos(mergedCatalog, keyword, mergedClickCounts);
                 const remoteSorted = sortBilibiliSearchVideos(remoteOrExact, keyword, mergedClickCounts);
                 items = mergeBilibiliSearchVideos(refreshedLocalMatches, remoteSorted).slice(0, 20);
+                ktvLogger.info(`[Search] fromSearchCache=${fromSearchCache} refreshedLocalMatches=${refreshedLocalMatches.length} remoteSorted=${remoteSorted.length} finalItems=${items.length}`);
+            } else {
+                ktvLogger.info(`[Search] catalog-only path items=${items.length}`);
             }
 
             const clickCounts = await getSearchClickCounts(items);
             const sortedItems = sortBilibiliSearchVideos(items, keyword, clickCounts);
+            ktvLogger.info(`[Search] returning ${sortedItems.length} items for "${keyword}"`);
             koaCtx.body = {
                 success: true,
                 keyword: normalizeSearchText(keyword),
@@ -631,8 +641,14 @@ export function runKTVServer(storage: Storage) {
             return;
         }
 
-        const hostname = parsedUrl.hostname;
-        if (!(hostname === 'hdslb.com' || hostname.endsWith('.hdslb.com')) || parsedUrl.protocol !== 'https:') {
+        if (parsedUrl.protocol !== 'https:') {
+            koaCtx.status = 403;
+            koaCtx.body = 'Forbidden protocol';
+            return;
+        }
+
+        const hostname = parsedUrl.hostname.toLowerCase();
+        if (!(hostname === 'hdslb.com' || hostname.endsWith('.hdslb.com'))) {
             koaCtx.status = 403;
             koaCtx.body = 'Forbidden host';
             return;

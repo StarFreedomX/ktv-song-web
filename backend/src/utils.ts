@@ -177,39 +177,55 @@ async function searchBilibiliKtvVideos(keyword: string) {
     const { imgKey, subKey } = await getBilibiliWbiKeys(cookie);
     const mergedMap = new Map<string, BilibiliSearchVideo>();
 
-    await Promise.all(BILIBILI_TAGS.map(async (tag) => {
-        const searchKeyword = `${trimmedKeyword} ${tag}`;
-        try {
-            const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
-            results.slice(0, 8).forEach((item) => {
-                const bvid = item.bvid?.trim();
-                if (!bvid) return;
-                const current = mergedMap.get(bvid);
-                if (current) {
-                    const titleText = stripHtml(item.title || current.title || '');
-                    const matcher = BILIBILI_TAG_MATCHERS[tag];
-                    if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
-                    return;
-                }
-                const titleText = stripHtml(item.title || bvid);
-                const detectedTags = BILIBILI_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
-                mergedMap.set(bvid, {
-                    bvid,
-                    title: titleText,
-                    pic: normalizeBilibiliPic(item.pic),
-                    author: stripHtml(item.author || ''),
-                    // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
-                    // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
-                    tags: detectedTags.length ? [...detectedTags] : [],
-                    parts: []
-                });
-            });
-        } catch (error) {
-            ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
+    const addToMap = (item: BiliSearchItem, tag?: (typeof BILIBILI_TAGS)[number]) => {
+        const bvid = item.bvid?.trim();
+        if (!bvid) return;
+        const current = mergedMap.get(bvid);
+        if (current) {
+            if (tag) {
+                const titleText = stripHtml(item.title || current.title || '');
+                const matcher = BILIBILI_TAG_MATCHERS[tag];
+                if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
+            }
+            return;
         }
-    }));
+        const titleText = stripHtml(item.title || bvid);
+        const detectedTags = BILIBILI_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
+        mergedMap.set(bvid, {
+            bvid,
+            title: titleText,
+            pic: normalizeBilibiliPic(item.pic),
+            author: stripHtml(item.author || ''),
+            // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
+            // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
+            tags: detectedTags.length ? [...detectedTags] : [],
+            parts: []
+        });
+    };
 
-    const mergedResults = [...mergedMap.values()].slice(0, 20);
+    await Promise.all([
+        // Direct keyword search (no tag suffix) — ensures the most relevant video is always
+        // fetched even when it doesn't rank in the top-8 of any tag-specific query.
+        (async () => {
+            try {
+                const results = await searchBilibiliVideosByKeyword(trimmedKeyword, cookie, imgKey, subKey);
+                results.slice(0, 10).forEach(item => addToMap(item));
+            } catch (error) {
+                ktvLogger.warn('Bilibili direct search failed', trimmedKeyword, error instanceof Error ? error.message : error);
+            }
+        })(),
+        ...BILIBILI_TAGS.map(async (tag) => {
+            const searchKeyword = `${trimmedKeyword} ${tag}`;
+            try {
+                const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
+                results.slice(0, 8).forEach(item => addToMap(item, tag));
+            } catch (error) {
+                ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
+            }
+        })
+    ]);
+
+    const mergedResults = [...mergedMap.values()].slice(0, 25);
     await Promise.all(mergedResults.map(async (item) => {
         try {
             const parts = await getBilibiliVideoParts(item.bvid);
