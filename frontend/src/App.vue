@@ -37,11 +37,16 @@ const UpdateStatus = Object.freeze({
 const route = useRoute();
 const roomIdFromUrl = route.query.roomId;
 const roomId = ref(roomIdFromUrl);
+const copyLinkStatus = ref('');
+const helpUrl = 'https://jcntv1iqoo5s.feishu.cn/wiki/Ytt1wNh88i6E9jkEndhcxNmYnBd';
 
-// 修改页面标题
-if (roomId.value) {
-    document.title = `KTV 房间 - ${roomId.value}`;
-}
+watch(() => route.query.roomId, (newRoomId) => {
+    roomId.value = newRoomId;
+}, { immediate: true });
+
+watch(roomId, (newRoomId) => {
+    document.title = newRoomId ? `${newRoomId} - KTV房间` : 'KTV房间';
+}, { immediate: true });
 
 // 字符串常量
 const EMPTY_HASH = "EMPTY_LIST_HASH";
@@ -134,6 +139,36 @@ const showTransientStatus = (status, delay = 1000) => {
             currentSync.value = SyncStatus.POLLING_IDLE;
         }
     }, delay);
+};
+
+const copyRoomLink = async () => {
+    const roomUrl = window.location.href;
+
+    try {
+        await navigator.clipboard.writeText(roomUrl);
+        copyLinkStatus.value = '已复制，可分享给别人点歌';
+    } catch {
+        const textArea = document.createElement('textarea');
+        textArea.value = roomUrl;
+        textArea.setAttribute('readonly', '');
+        textArea.style.position = 'absolute';
+        textArea.style.left = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        copyLinkStatus.value = '已复制，可分享给别人点歌';
+    }
+
+    setTimeout(() => {
+        if (copyLinkStatus.value === '已复制，可分享给别人点歌') {
+            copyLinkStatus.value = '';
+        }
+    }, 1500);
+};
+
+const openHelp = () => {
+    window.open(helpUrl, '_blank', 'noopener,noreferrer');
 };
 
 //监听器
@@ -908,7 +943,48 @@ onUnmounted(() => {
     <header class="mb-6 flex justify-between items-start">
         <div @click="backHome()" class="cursor-pointer group">
             <h1 class="brand-title">KTV<br/>Queue</h1>
-            <p class="text-sub">房间ID: {{ roomId }}</p>
+            <div class="flex items-center gap-2 mt-1">
+                <p class="text-sub">房间ID: {{ roomId }}</p>
+                <button
+                    type="button"
+                    :class="['copy-link-btn', { copied: copyLinkStatus }]"
+                    :aria-label="copyLinkStatus || '复制房间链接'"
+                    :title="copyLinkStatus || '复制房间链接'"
+                    @click.stop="copyRoomLink"
+                >
+                    <svg
+                        v-if="!copyLinkStatus"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <svg
+                        v-else
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M20 6 9 17l-5-5"></path>
+                    </svg>
+                    <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
+                </button>
+            </div>
+            <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
         </div>
         <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
@@ -920,6 +996,13 @@ onUnmounted(() => {
                 <button @click="showFavoritesModal = true" class="btn-icon">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"></path>
+                    </svg>
+                </button>
+                <button type="button" class="btn-icon" aria-label="帮助" title="帮助" @click="openHelp">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 16v-1"></path>
+                        <path d="M12 13c0-2 3-2.2 3-5a3 3 0 1 0-6 0"></path>
                     </svg>
                 </button>
                 <button @click="showSettings = true"
@@ -1140,6 +1223,30 @@ onUnmounted(() => {
 }
 
 .text-sub {
+    color: var(--text-sub);
+}
+
+.copy-link-btn {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-black shadow-sm transition-all;
+    background-color: var(--brand-color-lighter);
+    color: var(--text-sub);
+    border-color: var(--brand-color-light);
+}
+
+.copy-link-btn:hover {
+    color: var(--brand-color);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px -12px rgba(var(--brand-color-rgb), 0.7);
+}
+
+.copy-link-btn.copied {
+    background-color: var(--brand-color);
+    border-color: var(--brand-color);
+    color: white;
+}
+
+.copy-link-hint {
+    @apply mt-1 text-[10px] transition-colors;
     color: var(--text-sub);
 }
 

@@ -2,6 +2,8 @@ name: Docker Release
 
 on:
     push:
+        branches:
+            - master
         tags:
             - 'v*'
     workflow_dispatch:
@@ -40,10 +42,11 @@ jobs:
                 with:
                     images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}
                     tags: |
+                        type=ref,event=branch
                         # 只有当推送 tag 时才生成版本号标签 (例如 v0.4.10)
                         type=semver,pattern={{version}}
                         # 总是生成一个 latest 标签
-                        type=raw,value=latest
+                        type=raw,value=latest,enable={{is_default_branch}}
 
             -   name: Build and Push Docker Image
                 uses: docker/build-push-action@v5

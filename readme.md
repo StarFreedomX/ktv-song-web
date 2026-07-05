@@ -145,6 +145,69 @@ docker compose up -d --build --pull never
 
 这样 `backend` / `frontend` 会优先走本地 `Dockerfile` 构建，不会依赖原作者发布到 GHCR 的成品镜像；第一次构建时如果本地没有基础镜像，Docker 仍可能拉取像 `node`、`redis` 这类公共基础镜像。
 
+### 服务器部署建议：不要在服务器构建
+
+如果服务器在 `pnpm build` 或 `docker compose build` 时容易因为磁盘 IO 卡死，建议把部署流程改成：
+
+- GitHub Actions 负责构建并推送 `backend` / `frontend` 镜像到 `GHCR`
+- 服务器只做 `git pull`、`docker compose pull`、`docker compose up -d`
+- 不要在服务器执行 `pnpm build`
+- 不要在服务器执行 `docker compose up --build`
+
+推荐服务器部署步骤：
+
+```shell
+cd ~/ktv-song-web
+
+git fetch --all
+git checkout master
+git pull --ff-only
+
+docker compose pull
+docker compose up -d --force-recreate --remove-orphans
+```
+
+如果服务器的端口映射和仓库默认值不同，不要直接改受 Git 管理的 `docker-compose.yml`，建议在服务器本机额外放一个 `docker-compose.override.yml`，只覆盖端口：
+
+```yaml
+services:
+  ktv-web-backend:
+    ports:
+      - "旧后端端口:5823"
+
+  ktv-web-frontend:
+    ports:
+      - "旧前端端口:5526"
+```
+
+这样以后服务器执行 `git pull --ff-only` 时，不会因为端口改动和仓库内容冲突。
+
+### GitHub Actions 镜像发布说明
+
+仓库内的 `.github/workflows/docker-release.yml` 现在会：
+
+- 在 `master` 分支推送时自动构建并推送镜像
+- 在打 `v*` tag 时自动构建并推送版本镜像
+- 推送到 `GHCR`
+
+镜像标签规则：
+
+- `master` 分支：推送分支标签，并更新 `latest`
+- `v*` tag：推送语义化版本标签，例如 `0.4.1`
+
+服务器通常直接拉：
+
+- `ghcr.io/<owner>/ktv-song-web-backend:latest`
+- `ghcr.io/<owner>/ktv-song-web-frontend:latest`
+
+如果仓库是私有的，还需要让服务器先登录 GHCR：
+
+```shell
+echo <GHCR_TOKEN> | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
+```
+
+其中 `<GHCR_TOKEN>` 需要至少具备读取包的权限。
+
 ### 使用 Docker Compose 开发调试（不在宿主机安装依赖）
 
 项目的 `backend/Dockerfile` 与 `frontend/Dockerfile` 会在镜像构建阶段安装依赖并打包，因此你可以直接用 Docker 进行调试与验证，而无需在宿主机执行 `npm install` / `pnpm install` 产生 `node_modules`。
