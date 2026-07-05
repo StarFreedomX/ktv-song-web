@@ -8,7 +8,7 @@
                     <div>
                         <h3 class="text-xl font-black text-slate-800">Bilibili 选歌</h3>
                         <div class="text-xs text-slate-400 font-semibold mt-0.5">
-                            搜索结果仅供参考，受 API 限制；点击歌名可预览（默认 P1），预览跳转方式跟随「设置-跳转方式」
+                            搜索结果仅供参考，受 API 限制；双击歌名可打开 B 站预览（默认 P1），预览跳转方式跟随「设置-跳转方式」
                         </div>
                     </div>
                     <button @click="handleClose"
@@ -57,8 +57,8 @@
                                     <button
                                         type="button"
                                         class="modal-title-btn text-left text-base font-black text-slate-800 line-clamp-2 transition"
-                                        @click="$emit('preview', item)"
-                                        :title="`预览：${item.title}`"
+                                        @dblclick="$emit('preview', item)"
+                                        :title="`双击预览：${item.title}`"
                                     >
                                         {{ item.title }}
                                     </button>

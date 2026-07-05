@@ -61,5 +61,7 @@ export interface BilibiliSearchVideo {
     picProxy?: string
     author?: string
     tags: string[]
+    rawTags?: string[]
+    instrumentalWarning?: boolean
     parts: BilibiliVideoPart[]
 }

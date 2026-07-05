@@ -60,7 +60,8 @@ const cfg = ref({
     jumpMode: localData.jumpMode ?? (localStorage.getItem('ktv_jump_mode') || 'web'),
     autoJump: localData.autoJump ?? (localStorage.getItem('ktv_auto_jump') === 'true'),
     hostMode: localData.hostMode ?? (localStorage.getItem('ktv_host_mode') === 'true'),
-    wsMode: localData.wsMode ?? (localStorage.getItem('ktv_ws_mode') !== 'false')
+    wsMode: localData.wsMode ?? (localStorage.getItem('ktv_ws_mode') !== 'false'),
+    bilibiliInstrumentalWarning: localData.bilibiliInstrumentalWarning ?? true
 });
 
 // api接口
@@ -473,8 +474,82 @@ const buildBilibiliSongTitle = (item, part) => {
     return `${item.title} - P${part.page} ${part.part}`;
 };
 
+const OFF_VOCAL_HINT_PATTERNS = [
+    /\boff[\s_-]*vocal\b/i,
+    /\boffvocal\b/i,
+    /\bno[\s_-]*vocal\b/i,
+    /\bwithout[\s_-]*vocal\b/i,
+    /\binstrumental\b/i,
+    /\binst(?:\.|rumental)?\b/i,
+    /\bkaraoke(?:\s+ver(?:sion)?)?\b/i,
+    /オフボーカル/i,
+    /伴奏/i
+];
+
+const ON_VOCAL_HINT_PATTERNS = [
+    /\bon[\s_-]*vocal\b/i,
+    /\bonvocal\b/i,
+    /\bwith[\s_-]*vocal\b/i,
+    /人声/i,
+    /原唱/i
+];
+
+const hasOffVocalHint = (text) => {
+    const normalizedText = typeof text === 'string' ? text.trim() : '';
+    if (!normalizedText) return false;
+    return OFF_VOCAL_HINT_PATTERNS.some(pattern => pattern.test(normalizedText));
+};
+
+const hasOnVocalHint = (text) => {
+    const normalizedText = typeof text === 'string' ? text.trim() : '';
+    if (!normalizedText) return false;
+    return ON_VOCAL_HINT_PATTERNS.some(pattern => pattern.test(normalizedText));
+};
+
+const getVocalHintState = (text) => {
+    const normalizedText = typeof text === 'string' ? text.trim() : '';
+    if (!normalizedText) return 'unknown';
+    if (hasOnVocalHint(normalizedText)) return 'vocal';
+    if (hasOffVocalHint(normalizedText)) return 'instrumental';
+    return 'unknown';
+};
+
+const shouldWarnBilibiliInstrumental = (item, part = null) => {
+    if (!item) return false;
+
+    const hasMultipleParts = Array.isArray(item.parts) && item.parts.length > 1;
+    if (hasMultipleParts) {
+        const currentPart = part || item.parts[0];
+        const partHint = currentPart ? getVocalHintState(currentPart.part) : 'unknown';
+        if (partHint === 'vocal') return false;
+        if (partHint === 'instrumental') return true;
+        return false;
+    }
+
+    const titleHint = getVocalHintState(item.title);
+    if (titleHint === 'vocal') return false;
+    if (titleHint === 'instrumental') return true;
+
+    const tagCandidates = [
+        item.title,
+        ...(Array.isArray(item.tags) ? item.tags : []),
+        ...(Array.isArray(item.rawTags) ? item.rawTags : []),
+    ];
+    if (tagCandidates.some(hasOnVocalHint)) return false;
+    if (tagCandidates.some(hasOffVocalHint)) return true;
+    return false;
+};
+
+const confirmBilibiliInstrumentalSelection = (item, part = null) => {
+    if (cfg.value.bilibiliInstrumentalWarning === false) return true;
+    if (!shouldWarnBilibiliInstrumental(item, part)) return true;
+    const songTitle = buildBilibiliSongTitle(item, part);
+    return window.confirm(`检测到这首可能是仅伴奏 / off vocal 版本：\n\n${songTitle}\n\n可在搜索界面双击标题打开 B 站确认。\n如果这是误报，也可以在设置中关闭这个提示。\n\n是否继续点歌？`);
+};
+
 const addBilibiliSearchResult = async (item) => {
     const part = item.parts?.[0] || null;
+    if (!confirmBilibiliInstrumentalSelection(item, part)) return;
     await enqueueSong({
         title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
         url: getBilibiliSongUrl(item.bvid, part?.page || 1),
@@ -486,6 +561,7 @@ const addBilibiliSearchResult = async (item) => {
 };
 
 const addBilibiliPart = async ({ item, part }) => {
+    if (!confirmBilibiliInstrumentalSelection(item, part)) return;
     await enqueueSong({
         title: normalizeBilibiliTitle(buildBilibiliSongTitle(item, part)),
         url: getBilibiliSongUrl(item.bvid, part.page),
