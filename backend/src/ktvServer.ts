@@ -7,7 +7,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 
 const DURATION_MULTIPLIERS = {
@@ -107,7 +107,7 @@ export function runKTVServer(storage: Storage) {
 
     const attachProxyImage = (items: BilibiliSearchVideo[]) => {
         return items.map(item => ({
-            ...item,
+            ...normalizeBilibiliSearchVideo(item),
             picProxy: ENABLE_BILIBILI_IMAGE_PROXY && item.pic ? getImageProxyUrl(item.pic) : undefined
         }));
     };

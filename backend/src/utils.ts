@@ -40,6 +40,7 @@ type BiliSearchItem = {
     title?: string
     pic?: string
     author?: string
+    tag?: string
 }
 
 function stripHtml(input: string) {
@@ -69,6 +70,96 @@ function normalizeBilibiliPic(pic?: string) {
     if (pic.startsWith('//')) return `https:${pic}`;
     if (pic.startsWith('http://') || pic.startsWith('https://')) return pic;
     return `https://${pic.replace(/^\/+/, '')}`;
+}
+
+function parseBilibiliRawTags(tagText?: string) {
+    if (!tagText) return [];
+    return tagText
+        .split(/[,\uFF0C]/g)
+        .map(tag => stripHtml(tag).trim())
+        .filter(Boolean);
+}
+
+const BILIBILI_INSTRUMENTAL_PATTERNS = [
+    /\boff[\s_-]*vocal\b/i,
+    /\boffvocal\b/i,
+    /\bno[\s_-]*vocal\b/i,
+    /\bwithout[\s_-]*vocal\b/i,
+    /\binstrumental\b/i,
+    /\binst(?:\.|rumental)?\b/i,
+    /\bkaraoke(?:\s+ver(?:sion)?)?\b/i,
+    /オフボーカル/i,
+    /伴奏/i,
+] as const;
+
+const BILIBILI_VOCAL_PATTERNS = [
+    /\bon[\s_-]*vocal\b/i,
+    /\bonvocal\b/i,
+    /\bwith[\s_-]*vocal\b/i,
+    /人声/i,
+    /原唱/i,
+] as const;
+
+function hasInstrumentalKeyword(text?: string) {
+    const normalizedText = stripHtml(text || '');
+    if (!normalizedText) return false;
+    return BILIBILI_INSTRUMENTAL_PATTERNS.some(pattern => pattern.test(normalizedText));
+}
+
+function hasVocalKeyword(text?: string) {
+    const normalizedText = stripHtml(text || '');
+    if (!normalizedText) return false;
+    return BILIBILI_VOCAL_PATTERNS.some(pattern => pattern.test(normalizedText));
+}
+
+function getVocalHintState(text?: string) {
+    const normalizedText = stripHtml(text || '');
+    if (!normalizedText) return 'unknown' as const;
+    if (hasVocalKeyword(normalizedText)) return 'vocal' as const;
+    if (hasInstrumentalKeyword(normalizedText)) return 'instrumental' as const;
+    return 'unknown' as const;
+}
+
+function getBilibiliInstrumentalWarning(item: Pick<BilibiliSearchVideo, 'title' | 'tags' | 'rawTags' | 'parts'>, part?: BilibiliVideoPart | null) {
+    const hasMultipleParts = Array.isArray(item.parts) && item.parts.length > 1;
+    if (hasMultipleParts) {
+        const currentPart = part || item.parts[0];
+        const partHint = currentPart ? getVocalHintState(currentPart.part) : 'unknown';
+        if (partHint === 'vocal') return false;
+        if (partHint === 'instrumental') return true;
+        return false;
+    }
+
+    const titleHint = getVocalHintState(item.title);
+    if (titleHint === 'vocal') return false;
+    if (titleHint === 'instrumental') return true;
+
+    const tagCandidates = [
+        item.title,
+        ...(item.tags || []),
+        ...(item.rawTags || []),
+    ];
+    const hasVocalTag = tagCandidates.some(text => hasVocalKeyword(text));
+    if (hasVocalTag) return false;
+
+    const hasInstrumentalTag = tagCandidates.some(text => hasInstrumentalKeyword(text));
+    if (hasInstrumentalTag) return true;
+
+    return false;
+}
+
+function normalizeBilibiliSearchVideo(item: BilibiliSearchVideo) {
+    const normalizedItem: BilibiliSearchVideo = {
+        ...item,
+        tags: Array.isArray(item.tags) ? [...new Set(item.tags.filter(Boolean))] : [],
+        rawTags: Array.isArray(item.rawTags) ? [...new Set(item.rawTags.filter(Boolean))] : [],
+        parts: Array.isArray(item.parts) ? item.parts.map(part => ({
+            page: part.page,
+            part: part.part || `P${part.page}`
+        })) : []
+    };
+    normalizedItem.instrumentalWarning = getBilibiliInstrumentalWarning(normalizedItem);
+    return normalizedItem;
 }
 
 function getMixinKey(orig: string) {
@@ -211,7 +302,7 @@ async function searchBilibiliKtvVideos(keyword: string) {
         }
         const titleText = stripHtml(item.title || bvid);
         const detectedTags = BILIBILI_DETECT_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
-        mergedMap.set(bvid, {
+        mergedMap.set(bvid, normalizeBilibiliSearchVideo({
             bvid,
             title: titleText,
             pic: normalizeBilibiliPic(item.pic),
@@ -219,8 +310,9 @@ async function searchBilibiliKtvVideos(keyword: string) {
             // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
             // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
             tags: detectedTags.length ? [...detectedTags] : [],
+            rawTags: parseBilibiliRawTags(item.tag),
             parts: []
-        });
+        }));
     };
 
     await Promise.all([
@@ -372,31 +464,31 @@ async function fetchBilibiliVideoParts(items: BilibiliSearchVideo[]): Promise<vo
             ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
             item.parts = [{ page: 1, part: item.title }];
         }
+        item.instrumentalWarning = getBilibiliInstrumentalWarning(item);
     }));
 }
 
 function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
     const merged = new Map<string, BilibiliSearchVideo>();
     [...existing, ...incoming].forEach((item) => {
-        const current = merged.get(item.bvid);
+        const normalizedItem = normalizeBilibiliSearchVideo(item);
+        const current = merged.get(normalizedItem.bvid);
         if (!current) {
-            merged.set(item.bvid, {
-                ...item,
-                tags: [...item.tags],
-                parts: [...item.parts]
-            });
+            merged.set(normalizedItem.bvid, normalizedItem);
             return;
         }
 
-        current.title = current.title || item.title;
-        current.pic = current.pic || item.pic;
-        current.author = current.author || item.author;
-        current.tags = [...new Set([...current.tags, ...item.tags])];
+        current.title = current.title || normalizedItem.title;
+        current.pic = current.pic || normalizedItem.pic;
+        current.author = current.author || normalizedItem.author;
+        current.tags = [...new Set([...current.tags, ...normalizedItem.tags])];
+        current.rawTags = [...new Set([...(current.rawTags || []), ...(normalizedItem.rawTags || [])])];
         const partMap = new Map(current.parts.map(part => [part.page, part]));
-        item.parts.forEach(part => {
+        normalizedItem.parts.forEach(part => {
             if (!partMap.has(part.page)) partMap.set(part.page, part);
         });
         current.parts = [...partMap.values()].sort((a, b) => a.page - b.page);
+        current.instrumentalWarning = getBilibiliInstrumentalWarning(current);
     });
     return [...merged.values()];
 }
@@ -797,7 +889,9 @@ export {
     fetchBilibiliVideoParts,
     filterCachedBilibiliSearchVideos,
     filterBilibiliSearchVideosByRelevance,
+    getBilibiliInstrumentalWarning,
     mergeBilibiliSearchVideos,
+    normalizeBilibiliSearchVideo,
     normalizeSearchText,
     resolveBilibiliData,
     scoreBilibiliSearchVideo,
