@@ -1064,11 +1064,12 @@ onUnmounted(() => {
             </div>
             </div>
         </div>
-        <div class="mt-2" @click="backHome()">
-            <div class="flex items-center gap-2 cursor-pointer">
+        <div class="mt-2">
+            <div class="flex items-center gap-2">
                 <p class="text-sub">房间ID: {{ roomId }}</p>
                 <button
                     type="button"
+                    class="cursor-pointer"
                     :class="['copy-link-btn', { copied: copyLinkStatus }]"
                     :aria-label="copyLinkStatus || '复制房间链接'"
                     :title="copyLinkStatus || '复制房间链接'"
