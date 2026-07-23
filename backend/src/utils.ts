@@ -6,17 +6,22 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
-const BILIBILI_TAGS = ['カラオケ', 'ニコカラ', '纯k自用', '卡拉OK'] as const;
+// Tags used to construct B站 search queries — changing this list adds API calls.
+const BILIBILI_SEARCH_TAGS = ['カラオケ', 'ニコカラ', '纯k自用', '卡拉OK'] as const;
+// Tags detected in video titles — expanding this list costs nothing extra.
+const BILIBILI_DETECT_TAGS = ['ニコカラ', 'カラオケ', '纯k自用', '纯k投屏', '卡拉OK'] as const;
 const BILIBILI_TAG_PRIORITY: Record<string, number> = {
     'ニコカラ': 0,
     'カラオケ': 1,
     '纯k自用': 2,
+    '纯k投屏': 2,
     '卡拉OK': 3
 };
-const BILIBILI_TAG_MATCHERS: Record<(typeof BILIBILI_TAGS)[number], RegExp> = {
+const BILIBILI_TAG_MATCHERS: Record<(typeof BILIBILI_DETECT_TAGS)[number], RegExp> = {
     'ニコカラ': /(ニコカラ|nicokara)/i,
     'カラオケ': /(カラオケ|karaoke)/i,
     '纯k自用': /(纯k自用)/i,
+    '纯k投屏': /(纯k投屏|投屏自用)/i,
     '卡拉OK': /(卡拉OK|ktv字幕)/i
 };
 const WBI_MIXIN_KEY_ENC_TAB = [
@@ -38,13 +43,25 @@ type BiliSearchItem = {
 }
 
 function stripHtml(input: string) {
-    return (input || '').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').trim();
+    return (input || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/&#x([0-9a-fA-F]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+        .trim();
 }
 
 function normalizeSearchText(input: string) {
     return (input || '')
         .toLowerCase()
-        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"`~!@#$%^&*+=,，。！？：:；;]/g, '');
+        // Include fullwidth variants (／ ～ ·) and ideographic space (U+3000) which
+        // are common B站 title separators but blocked substring matching (e.g.
+        // "Lemon／米津玄師" would not match keyword "lemon米津玄師").
+        .replace(/[\s\-_.|/\\()[\]{}【】「」『』（）'"'`~!@#$%^&*+=,，。！？：:；;／～·　・×♪♫★☆×]/g, '');
 }
 
 function normalizeBilibiliPic(pic?: string) {
@@ -171,56 +188,69 @@ async function getBilibiliVideoParts(bvid: string) {
 
 async function searchBilibiliKtvVideos(keyword: string) {
     const trimmedKeyword = keyword.trim();
-    if (!trimmedKeyword) return [];
+    if (!trimmedKeyword) return { items: [], directBvids: new Set<string>() };
 
     const cookie = await getBilibiliCookie();
     const { imgKey, subKey } = await getBilibiliWbiKeys(cookie);
     const mergedMap = new Map<string, BilibiliSearchVideo>();
+    // Track bvids returned by the direct (no-tag) search — these bypass the relevance filter
+    // because B站's own ranking is already a relevance signal (handles romaji↔kana, etc.)
+    const directBvids = new Set<string>();
 
-    await Promise.all(BILIBILI_TAGS.map(async (tag) => {
-        const searchKeyword = `${trimmedKeyword} ${tag}`;
-        try {
-            const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
-            results.slice(0, 8).forEach((item) => {
-                const bvid = item.bvid?.trim();
-                if (!bvid) return;
-                const current = mergedMap.get(bvid);
-                if (current) {
-                    const titleText = stripHtml(item.title || current.title || '');
-                    const matcher = BILIBILI_TAG_MATCHERS[tag];
-                    if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
-                    return;
-                }
-                const titleText = stripHtml(item.title || bvid);
-                const detectedTags = BILIBILI_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
-                mergedMap.set(bvid, {
-                    bvid,
-                    title: titleText,
-                    pic: normalizeBilibiliPic(item.pic),
-                    author: stripHtml(item.author || ''),
-                    // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
-                    // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
-                    tags: detectedTags.length ? [...detectedTags] : [],
-                    parts: []
+    const addToMap = (item: BiliSearchItem, tag?: (typeof BILIBILI_SEARCH_TAGS)[number]) => {
+        const bvid = item.bvid?.trim();
+        if (!bvid) return;
+        const current = mergedMap.get(bvid);
+        if (current) {
+            if (tag) {
+                const titleText = stripHtml(item.title || current.title || '');
+                const matcher = BILIBILI_TAG_MATCHERS[tag];
+                if (matcher?.test(titleText) && !current.tags.includes(tag)) current.tags.push(tag);
+            }
+            return;
+        }
+        const titleText = stripHtml(item.title || bvid);
+        const detectedTags = BILIBILI_DETECT_TAGS.filter(t => BILIBILI_TAG_MATCHERS[t]?.test(titleText));
+        mergedMap.set(bvid, {
+            bvid,
+            title: titleText,
+            pic: normalizeBilibiliPic(item.pic),
+            author: stripHtml(item.author || ''),
+            // Only label tags that actually appear in the title. The query tag itself is NOT a reliable signal.
+            // Otherwise users will see "ニコカラ" tags on videos whose titles never mention it.
+            tags: detectedTags.length ? [...detectedTags] : [],
+            parts: []
+        });
+    };
+
+    await Promise.all([
+        // Direct keyword search (no tag suffix): B站's own ranking is a relevance signal, so
+        // results here bypass our strict token filter (handles romaji↔kana cross-script queries).
+        (async () => {
+            try {
+                const results = await searchBilibiliVideosByKeyword(trimmedKeyword, cookie, imgKey, subKey);
+                results.forEach((item, idx) => {
+                    const bvid = item.bvid?.trim();
+                    if (bvid && idx < 10) directBvids.add(bvid);
+                    addToMap(item);
                 });
-            });
-        } catch (error) {
-            ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
-        }
-    }));
+            } catch (error) {
+                ktvLogger.warn('Bilibili direct search failed', trimmedKeyword, error instanceof Error ? error.message : error);
+            }
+        })(),
+        ...BILIBILI_SEARCH_TAGS.map(async (tag) => {
+            const searchKeyword = `${trimmedKeyword} ${tag}`;
+            try {
+                const results = await searchBilibiliVideosByKeyword(searchKeyword, cookie, imgKey, subKey);
+                results.slice(0, 20).forEach(item => addToMap(item, tag));
+            } catch (error) {
+                ktvLogger.warn('Bilibili search tag failed', searchKeyword, error instanceof Error ? error.message : error);
+            }
+        })
+    ]);
 
-    const mergedResults = [...mergedMap.values()].slice(0, 20);
-    await Promise.all(mergedResults.map(async (item) => {
-        try {
-            const parts = await getBilibiliVideoParts(item.bvid);
-            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
-        } catch (error) {
-            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
-            item.parts = [{ page: 1, part: item.title }];
-        }
-    }));
-
-    return mergedResults;
+    // Parts are fetched later (after relevance filter) to avoid pagelist calls on discarded items.
+    return { items: [...mergedMap.values()].slice(0, 80), directBvids };
 }
 
 function sortBilibiliSearchVideos(
@@ -230,26 +260,25 @@ function sortBilibiliSearchVideos(
 ) {
     const normalizedKeyword = normalizeSearchText(keyword);
     return [...items].sort((a, b) => {
-        // Relevance-first: prevent "just has ニコカラ" results from outranking the actual song name.
         const aScore = normalizedKeyword ? scoreBilibiliSearchVideo(a, keyword) : 0;
         const bScore = normalizedKeyword ? scoreBilibiliSearchVideo(b, keyword) : 0;
-        if (aScore !== bScore) {
-            // If both are similarly relevant, prefer items that are explicitly tagged as karaoke-like.
-            // This avoids "normal MV/字幕版" beating a karaoke upload by a small score margin.
-            const scoreGap = Math.abs(aScore - bScore);
-            if (scoreGap <= 60) {
-                const aHasPreferredTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
-                const bHasPreferredTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
-                if (aHasPreferredTag !== bHasPreferredTag) return aHasPreferredTag ? -1 : 1;
-            }
-            return bScore - aScore;
-        }
 
+        // Tier 1: KTV-tagged videos always beat untagged ones.
+        // The relevance filter already guarantees all items here are relevant to the query,
+        // so it is safe to unconditionally prefer the karaoke format over a shorter-title
+        // non-KTV result (e.g. a drum-score video that scores higher due to title length).
+        const aHasTag = a.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+        const bHasTag = b.tags.some(tag => (BILIBILI_TAG_PRIORITY[tag] ?? 99) <= 3);
+        if (aHasTag !== bHasTag) return aHasTag ? -1 : 1;
+
+        // Tier 2: within the same tag-tier, rank by relevance score.
+        if (aScore !== bScore) return bScore - aScore;
+
+        // Tiebreakers: click count → tag priority → tag count → title
         const aClicks = clickCounts[a.bvid] || 0;
         const bClicks = clickCounts[b.bvid] || 0;
         if (aClicks !== bClicks) return bClicks - aClicks;
 
-        // Then use tag priority as a tiebreaker.
         const aPriority = Math.min(...a.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
         const bPriority = Math.min(...b.tags.map(tag => BILIBILI_TAG_PRIORITY[tag] ?? 99));
         if (aPriority !== bPriority) return aPriority - bPriority;
@@ -323,8 +352,27 @@ function scoreBilibiliSearchVideo(item: BilibiliSearchVideo, keyword: string) {
     return score;
 }
 
-function filterBilibiliSearchVideosByRelevance(items: BilibiliSearchVideo[], keyword: string) {
-    return items.filter(item => scoreBilibiliSearchVideo(item, keyword) > 0);
+function filterBilibiliSearchVideosByRelevance(
+    items: BilibiliSearchVideo[],
+    keyword: string,
+    directBvids: Set<string> = new Set()
+) {
+    // Direct-search results (from plain keyword, no tag suffix) are trusted as relevant by B站's
+    // own ranking and bypass our token filter. This handles cross-script queries (e.g. romaji
+    // input matching a Japanese-kana title) where our token matching would otherwise return 0.
+    return items.filter(item => directBvids.has(item.bvid) || scoreBilibiliSearchVideo(item, keyword) > 0);
+}
+
+async function fetchBilibiliVideoParts(items: BilibiliSearchVideo[]): Promise<void> {
+    await Promise.all(items.map(async (item) => {
+        try {
+            const parts = await getBilibiliVideoParts(item.bvid);
+            item.parts = parts.length > 0 ? parts : [{ page: 1, part: item.title }];
+        } catch (error) {
+            ktvLogger.warn('Bilibili pagelist failed', item.bvid, error instanceof Error ? error.message : error);
+            item.parts = [{ page: 1, part: item.title }];
+        }
+    }));
 }
 
 function mergeBilibiliSearchVideos(existing: BilibiliSearchVideo[], incoming: BilibiliSearchVideo[]) {
@@ -746,6 +794,7 @@ const songListTools = {
 }
 
 export {
+    fetchBilibiliVideoParts,
     filterCachedBilibiliSearchVideos,
     filterBilibiliSearchVideosByRelevance,
     mergeBilibiliSearchVideos,
