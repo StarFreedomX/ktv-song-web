@@ -33,6 +33,13 @@
                             @update:model-value="val => draft.autoPlay = val"
                         />
 
+                        <SettingSwitch
+                            title="伴奏提醒"
+                            description="检测到仅伴奏 / off vocal 结果时，点歌前弹出确认提示"
+                            :model-value="draft.bilibiliInstrumentalWarning"
+                            @update:model-value="val => draft.bilibiliInstrumentalWarning = val"
+                        />
+
                         <SettingCollapse title="进阶设置" tag="Advanced">
                             <SettingSegment
                                 title="同步模式"

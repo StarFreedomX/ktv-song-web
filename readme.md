@@ -7,6 +7,7 @@
 ## B站搜索 + Redis缓存
 
 - 前端：`添加新歌曲` 弹窗内输入关键词，调用后端 `/api/bilibiliSearch` 获取候选；选择后会调用 `/api/bilibiliSearch/select` 记录点击热度用于排序。
+- 伴奏提示：后端会保留 B 站搜索接口返回的原始 `tag`，并结合现有标题标签、视频标题、分P标题做“仅伴奏 / off vocal”识别；当前分P优先级最高，标题里明确含 `on vocal` 时会压过 `off vocal` 提示。前端默认会在点歌前弹出确认提示，用户也可以在设置里关闭；搜索弹窗里双击标题可直接打开 B 站确认。
 - 后端：会对搜索结果做两层缓存
   - `bilibili_search_cache`：按关键词缓存搜索结果（默认 1 天）
   - `bilibili_search_catalog`：全局搜索目录（默认 14 天），用于做“局部匹配 + 热度排序”
@@ -144,6 +145,69 @@ docker compose up -d --build --pull never
 ```
 
 这样 `backend` / `frontend` 会优先走本地 `Dockerfile` 构建，不会依赖原作者发布到 GHCR 的成品镜像；第一次构建时如果本地没有基础镜像，Docker 仍可能拉取像 `node`、`redis` 这类公共基础镜像。
+
+### 服务器部署建议：不要在服务器构建
+
+如果服务器在 `pnpm build` 或 `docker compose build` 时容易因为磁盘 IO 卡死，建议把部署流程改成：
+
+- GitHub Actions 负责构建并推送 `backend` / `frontend` 镜像到 `GHCR`
+- 服务器只做 `git pull`、`docker compose pull`、`docker compose up -d`
+- 不要在服务器执行 `pnpm build`
+- 不要在服务器执行 `docker compose up --build`
+
+推荐服务器部署步骤：
+
+```shell
+cd ~/ktv-song-web
+
+git fetch --all
+git checkout master
+git pull --ff-only
+
+docker compose pull
+docker compose up -d --force-recreate --remove-orphans
+```
+
+如果服务器的端口映射和仓库默认值不同，不要直接改受 Git 管理的 `docker-compose.yml`，建议在服务器本机额外放一个 `docker-compose.override.yml`，只覆盖端口：
+
+```yaml
+services:
+  ktv-web-backend:
+    ports:
+      - "旧后端端口:5823"
+
+  ktv-web-frontend:
+    ports:
+      - "旧前端端口:5526"
+```
+
+这样以后服务器执行 `git pull --ff-only` 时，不会因为端口改动和仓库内容冲突。
+
+### GitHub Actions 镜像发布说明
+
+仓库内的 `.github/workflows/docker-release.yml` 现在会：
+
+- 在 `master` 分支推送时自动构建并推送镜像
+- 在打 `v*` tag 时自动构建并推送版本镜像
+- 推送到 `GHCR`
+
+镜像标签规则：
+
+- `master` 分支：推送分支标签，并更新 `latest`
+- `v*` tag：推送语义化版本标签，例如 `0.4.1`
+
+服务器通常直接拉：
+
+- `ghcr.io/<owner>/ktv-song-web-backend:latest`
+- `ghcr.io/<owner>/ktv-song-web-frontend:latest`
+
+如果仓库是私有的，还需要让服务器先登录 GHCR：
+
+```shell
+echo <GHCR_TOKEN> | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
+```
+
+其中 `<GHCR_TOKEN>` 需要至少具备读取包的权限。
 
 ### 使用 Docker Compose 开发调试（不在宿主机安装依赖）
 
