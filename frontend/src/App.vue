@@ -1016,53 +1016,10 @@ onUnmounted(() => {
 <template>
     <div class="brand-theme">
 
-    <header class="mb-6 flex justify-between items-start">
-        <div @click="backHome()" class="cursor-pointer group">
-            <h1 class="brand-title">KTV<br/>Queue</h1>
-            <div class="flex items-center gap-2 mt-1">
-                <p class="text-sub">房间ID: {{ roomId }}</p>
-                <button
-                    type="button"
-                    :class="['copy-link-btn', { copied: copyLinkStatus }]"
-                    :aria-label="copyLinkStatus || '复制房间链接'"
-                    :title="copyLinkStatus || '复制房间链接'"
-                    @click.stop="copyRoomLink"
-                >
-                    <svg
-                        v-if="!copyLinkStatus"
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                    >
-                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                    <svg
-                        v-else
-                        width="14"
-                        height="14"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.4"
-                        stroke-linecap="round"
-                        stroke-linejoin="round"
-                        aria-hidden="true"
-                    >
-                        <path d="M20 6 9 17l-5-5"></path>
-                    </svg>
-                    <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
-                </button>
-            </div>
-            <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
-        </div>
-        <div class="flex flex-col items-end gap-2">
+    <header class="mb-6">
+        <div class="flex justify-between items-start">
+            <h1 @click="backHome()" class="brand-title cursor-pointer">KTV<br/>Queue</h1>
+            <div class="flex flex-col items-end gap-2">
             <div class="flex gap-2">
                 <button @click="cfg.hostMode = !cfg.hostMode"
                         :class="['btn-host', cfg.hostMode ? 'active' : 'inactive']">
@@ -1105,6 +1062,51 @@ onUnmounted(() => {
                     </span>
                 </div>
             </div>
+            </div>
+        </div>
+        <div class="mt-2" @click="backHome()">
+            <div class="flex items-center gap-2 cursor-pointer">
+                <p class="text-sub">房间ID: {{ roomId }}</p>
+                <button
+                    type="button"
+                    :class="['copy-link-btn', { copied: copyLinkStatus }]"
+                    :aria-label="copyLinkStatus || '复制房间链接'"
+                    :title="copyLinkStatus || '复制房间链接'"
+                    @click.stop="copyRoomLink"
+                >
+                    <svg
+                        v-if="!copyLinkStatus"
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                    <svg
+                        v-else
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2.4"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M20 6 9 17l-5-5"></path>
+                    </svg>
+                    <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
+                </button>
+            </div>
+            <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
         </div>
     </header>
 
