@@ -8,7 +8,9 @@
     "main": "start-frontend.cjs",
     "type": "module",
     "license": "MIT",
-    "keywords": ["ktv"],
+    "keywords": [
+        "ktv"
+    ],
     "author": "",
     "packageManager": "pnpm@10.20.0",
     "scripts": {
@@ -18,19 +20,19 @@
         "start": "node start-frontend.cjs"
     },
     "dependencies": {
-        "dotenv": "^17.2.3",
+        "dotenv": "^17.4.2",
         "express": "^5.2.1",
-        "http-proxy-middleware": "^3.0.5"
+        "http-proxy-middleware": "^3.0.7"
     },
     "devDependencies": {
-        "@tailwindcss/postcss": "^4.1.18",
-        "autoprefixer": "^10.4.23",
-        "@vitejs/plugin-vue": "^6.0.3",
-        "tailwindcss": "^4.1.18",
-        "vite": "^7.3.1",
+        "@tailwindcss/postcss": "^4.3.3",
+        "@vitejs/plugin-vue": "^6.0.8",
+        "autoprefixer": "^10.5.4",
         "js-sha256": "^0.11.1",
-        "postcss": "^8.5.6",
-        "vue": "^3.5.27",
+        "postcss": "^8.5.23",
+        "tailwindcss": "^4.3.3",
+        "vite": "^7.3.6",
+        "vue": "^3.5.40",
         "vue-router": "^4.6.4",
         "vuedraggable": "^4.1.0"
     }

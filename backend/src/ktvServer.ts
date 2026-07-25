@@ -677,16 +677,17 @@ export function runKTVServer(storage: Storage) {
             });
             const buffer = Buffer.from(response.data);
             const contentType = response.headers['content-type'] || 'image/jpeg';
-            if (!contentType.startsWith('image/')) {
+            const contentTypeStr = typeof contentType === 'string' ? contentType : '';
+            if (!contentTypeStr.startsWith('image/')) {
                 koaCtx.status = 502;
                 koaCtx.body = 'Image fetch failed';
                 return;
             }
             imageCache.set(imageUrl, {
                 buffer,
-                contentType,
+                contentType: contentTypeStr,
             });
-            koaCtx.set('Content-Type', contentType);
+            koaCtx.set('Content-Type', contentTypeStr);
             koaCtx.set('Cache-Control', 'public, max-age=86400');
             koaCtx.body = buffer;
         } catch (error) {
