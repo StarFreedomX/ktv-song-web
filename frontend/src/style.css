@@ -194,7 +194,7 @@ body {
 
 .ghost-card {
     opacity: 0.2;
-    background: #FF3377 !important;
+    background: var(--brand-color-lighter) !important;
 }
 
 .drag-handle {
