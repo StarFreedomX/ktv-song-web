@@ -124,7 +124,7 @@ defineEmits([
 }
 
 .song-card {
-    @apply mb-3 p-4 rounded-2xl border flex items-center transition-all;
+    @apply mb-3 p-4 rounded-2xl border flex items-center;
     background-color: var(--card-bg);
     border-color: var(--card-border);
     box-shadow: var(--card-shadow);
