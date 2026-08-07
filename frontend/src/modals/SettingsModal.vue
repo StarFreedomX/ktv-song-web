@@ -122,7 +122,7 @@ const wsOptions = [
 }
 
 .settings-modal-container {
-    @apply w-full max-w-sm rounded-xl shadow-2xl border flex flex-col max-h-[85vh] overflow-hidden transition-all;
+    @apply w-full max-w-sm rounded-xl shadow-2xl border flex flex-col max-h-[85vh] overflow-hidden;
     background-color: var(--brand-color-bg);
     border-color: var(--border-base);
 }
@@ -169,12 +169,4 @@ const wsOptions = [
     background: var(--brand-color-light);
 }
 
-/* 动画逻辑 */
-.modal-fade-enter-active, .modal-fade-leave-active {
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease;
-}
-.modal-fade-enter-from, .modal-fade-leave-to {
-    opacity: 0;
-    transform: scale(0.9) translateY(20px);
-}
 </style>

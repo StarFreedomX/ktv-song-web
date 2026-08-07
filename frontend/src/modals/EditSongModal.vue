@@ -125,15 +125,5 @@ const handleSave = () => {
     @apply flex-1;
 }
 
-/* 过渡动画 */
-.modal-fade-enter-active,
-.modal-fade-leave-active {
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
 
-.modal-fade-enter-from,
-.modal-fade-leave-to {
-    opacity: 0;
-    transform: scale(0.95);
-}
 </style>

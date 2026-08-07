@@ -179,13 +179,16 @@ body {
 }
 
 .modal-fade-enter-from .modal-container,
-.modal-fade-leave-to .modal-container {
+.modal-fade-leave-to .modal-container,
+.modal-fade-enter-from .settings-modal-container,
+.modal-fade-leave-to .settings-modal-container {
     transform: scale(0.9) translateY(20px);
     opacity: 0;
 }
 
 /* 容器本身的过渡 */
-.modal-container {
+.modal-container,
+.settings-modal-container {
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
