@@ -47,6 +47,12 @@ export function initUtils(lastHash){
                                 chars[k] = "";
                             }
                         }
+
+                        // B站分享文案自带的包裹：最外层【】完整包裹整个标题（起于开头、闭于末尾）时剥掉这一层
+                        if (left.type === '【' && start === 0 && end === chars.length - 1) {
+                            chars[start] = "";
+                            chars[end] = "";
+                        }
                     }
                 }
             }
