@@ -869,8 +869,9 @@ const songListTools = {
         'i:', songLists.singing ? songListTools.songToStr(songLists.singing) : 'null',
         's:', songLists.sung.map(songListTools.songToStr).join(',')
     ].join(';'),
-    initSongLists: async (storage: Storage, roomId: string): Promise<SongLists>=> {
-        const storageSongLists = (await storage.get<SongLists>(DATABASE_NAME, roomId) || songListTools.getEmptySongLists())
+    initSongLists: async (storage: Storage, roomId: string): Promise<SongLists | null> => {
+        const storageSongLists = await storage.get<SongLists>(DATABASE_NAME, roomId);
+        if (!storageSongLists) return null;
         return {
             queued: storageSongLists.queued || [],
             singing: storageSongLists.singing || null,

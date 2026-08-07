@@ -32,31 +32,36 @@ async function getList(roomId: string) {
 }
 
 async function op(roomId: string, body: any) {
-    return await request(server)
-        .post(`/api/songOperation?roomId=${roomId}`)
+    return request(server)
+        .post(`/api/songOperation?roomId=${ roomId }`)
         .send(body)
         .set('Content-Type', 'application/json');
 }
 
 async function next(roomId: string, hash: string) {
-    return await request(server)
-        .post(`/api/nextSong?roomId=${roomId}`)
+    return request(server)
+        .post(`/api/nextSong?roomId=${ roomId }`)
         .send({ idArrayHash: hash })
         .set('Content-Type', 'application/json');
 }
 
 async function prev(roomId: string, hash: string) {
-    return await request(server)
-        .post(`/api/prevSong?roomId=${roomId}`)
+    return request(server)
+        .post(`/api/prevSong?roomId=${ roomId }`)
         .send({ idArrayHash: hash })
         .set('Content-Type', 'application/json');
 }
 
 const createSong = (id: string) => ({ id, title: `Song ${id}`, url: `url/${id}` });
 
+async function createRoom(roomId: string) {
+    return request(server).post(`/api/createRoom?roomId=${ roomId }`);
+}
+
 describe('SwitchSong next/prev flows', () => {
     test('nextSong moves queued -> singing and previous singing -> sung', async () => {
         const room = `r-${Date.now()}-1`;
+        await createRoom(room);
         let list = await getList(room);
         expect(list.changed).toBe(true);
         let hash = list.hash;
@@ -90,6 +95,7 @@ describe('SwitchSong next/prev flows', () => {
 
     test('nextSong when queue empty moves singing to sung and returns song', async () => {
         const room = `r-${Date.now()}-2`;
+        await createRoom(room);
         let list = await getList(room);
         let hash = list.hash;
 
@@ -114,6 +120,7 @@ describe('SwitchSong next/prev flows', () => {
 
     test('prevSong when sung non-empty and singing exists swaps correctly', async () => {
         const room = `r-${Date.now()}-3`;
+        await createRoom(room);
         let list = await getList(room);
         let hash = list.hash;
 
@@ -137,6 +144,7 @@ describe('SwitchSong next/prev flows', () => {
 
     test('undoSung moves sung -> queued head', async () => {
         const room = `r-${Date.now()}-undo`;
+        await createRoom(room);
         let list = await getList(room);
         let hash = list.hash;
 
@@ -166,6 +174,7 @@ describe('SwitchSong next/prev flows', () => {
 
     test('prevSong when sung empty and singing exists moves singing -> queued', async () => {
         const room = `r-${Date.now()}-4`;
+        await createRoom(room);
         let list = await getList(room);
         let hash = list.hash;
 
@@ -187,6 +196,7 @@ describe('SwitchSong next/prev flows', () => {
 
     test('prevSong when sung non-empty and singing null brings last sung to singing', async () => {
         const room = `r-${Date.now()}-5`;
+        await createRoom(room);
         let list = await getList(room);
         let hash = list.hash;
 
