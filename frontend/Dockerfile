@@ -1,8 +1,8 @@
 # --- 阶段 1: 构建 ---
 FROM node:22-alpine AS builder
 
-# 安装 pnpm
-RUN npm install -g pnpm
+# 安装 pnpm（固定版本，与根 package.json 的 packageManager 保持一致）
+RUN npm install -g pnpm@11.20.0
 
 ARG NPM_CONFIG_REGISTRY
 
