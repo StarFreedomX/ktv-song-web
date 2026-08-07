@@ -62,7 +62,7 @@
                     </ComfirmButton>
 
                     <ComfirmButton
-                        class="flex-1 primary-shadow"
+                        class="flex-1"
                         type="primary"
                         @click="handleConfirm"
                     >
@@ -147,11 +147,6 @@ const wsOptions = [
 
 .modal-footer {
     @apply p-8 pt-4 flex gap-3 shrink-0;
-}
-
-/* 主题色投影 */
-.primary-shadow {
-    box-shadow: 0 8px 20px -4px rgba(var(--brand-color-rgb), 0.3);
 }
 
 /* 自定义滚动条 */
