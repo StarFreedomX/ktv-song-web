@@ -144,6 +144,12 @@ export function runKTVServer(storage: Storage) {
         }
     };
 
+    // 持久化房间数据并自动刷新最后修改时间（hash 不受影响，因为哈希只由三个歌单数组计算）
+    const persistRoom = async (roomId: string, songLists: SongLists) => {
+        songLists.updatedAt = Date.now();
+        await storage.set(DATABASE_NAME, roomId, songLists, CACHE_EXPIRE_TIME);
+    };
+
     // WebSocket 路由：处理连接与房间加入
     const wsRouter = new Router();
     wsRouter.all('/api/ws', async (ctx) => {
@@ -224,6 +230,8 @@ export function runKTVServer(storage: Storage) {
                 queued: roomData.queued || [],
                 singing: roomData.singing || null,
                 sung: roomData.sung || [],
+                createdAt: roomData.createdAt,
+                updatedAt: roomData.updatedAt,
             };
         }
 
@@ -271,7 +279,7 @@ export function runKTVServer(storage: Storage) {
         // 重置缓存
         roomSongsCache[roomId] = finalSongLists;
         roomOpCache[roomId] = [];
-        await storage.set(DATABASE_NAME, roomId, finalSongLists, CACHE_EXPIRE_TIME);
+        await persistRoom(roomId, finalSongLists);
         const finalHash = getHash(finalSongLists);
         koaCtx.body = { success: true, hash: finalHash };
         notifyUpdate(roomId, finalHash)
@@ -299,7 +307,7 @@ export function runKTVServer(storage: Storage) {
                 const finishedSong = currentSongLists.singing;
                 currentSongLists.singing = null;
                 const finalHash = getHash(roomSongsCache[roomId]);
-                await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+                await persistRoom(roomId, roomSongsCache[roomId]);
                 koaCtx.body = { success: true, hash: finalHash, song: finishedSong };
                 notifyUpdate(roomId, finalHash);
                 return;
@@ -352,7 +360,7 @@ export function runKTVServer(storage: Storage) {
             currentSongLists.singing = nextSong;
 
             const finalHash = getHash(roomSongsCache[roomId]);
-            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, roomSongsCache[roomId]);
             koaCtx.body = { success: true, hash: finalHash };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
@@ -411,7 +419,7 @@ export function runKTVServer(storage: Storage) {
 
                 currentSongLists.singing = null;
                 const finalHash = getHash(roomSongsCache[roomId]);
-                await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+                await persistRoom(roomId, roomSongsCache[roomId]);
                 koaCtx.body = { success: true, hash: finalHash };
                 notifyUpdate(roomId, finalHash);
                 return;
@@ -428,7 +436,7 @@ export function runKTVServer(storage: Storage) {
             if (lastIdx !== -1) currentSongLists.sung.splice(lastIdx, 1);
             // singing already equals prevSong, 不改变 queued
             const finalHash = getHash(roomSongsCache[roomId]);
-            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, roomSongsCache[roomId]);
             koaCtx.body = { success: true, hash: finalHash, song: prevSong };
             notifyUpdate(roomId, finalHash);
             return;
@@ -462,7 +470,7 @@ export function runKTVServer(storage: Storage) {
             }
 
             const finalHash = getHash(roomSongsCache[roomId]);
-            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, roomSongsCache[roomId]);
             koaCtx.body = { success: true, hash: finalHash, song: prevSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
@@ -516,7 +524,7 @@ export function runKTVServer(storage: Storage) {
             const idx = currentSongLists.sung.findIndex(s => s.id === targetSong.id);
             if (idx !== -1) currentSongLists.sung.splice(idx, 1);
             const finalHash = getHash(roomSongsCache[roomId]);
-            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, roomSongsCache[roomId]);
             koaCtx.body = { success: true, hash: finalHash };
             notifyUpdate(roomId, finalHash);
             return;
@@ -542,7 +550,7 @@ export function runKTVServer(storage: Storage) {
             if (lastIdx !== -1) currentSongLists.sung.splice(lastIdx, 1);
 
             const finalHash = getHash(roomSongsCache[roomId]);
-            await storage.set(DATABASE_NAME, roomId, roomSongsCache[roomId], CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, roomSongsCache[roomId]);
             koaCtx.body = { success: true, hash: finalHash, song: targetSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
@@ -818,7 +826,7 @@ export function runKTVServer(storage: Storage) {
 
             roomSongsCache[roomId] = finalSongLists;
             roomOpCache[roomId] = logs;
-            await storage.set(DATABASE_NAME, roomId, finalSongLists, CACHE_EXPIRE_TIME);
+            await persistRoom(roomId, finalSongLists);
             koaCtx.body = { success: true, hash: finalHash, song };
             notifyUpdate(roomId, finalHash)
         } catch (e) {

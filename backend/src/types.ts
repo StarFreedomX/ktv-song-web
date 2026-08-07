@@ -25,7 +25,9 @@ export const enum WsReadyState {
 export interface SongLists {
     queued: Song[],
     singing: Song,
-    sung: Song[]
+    sung: Song[],
+    createdAt?: number,
+    updatedAt?: number
 }
 
 export interface Song {
