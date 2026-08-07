@@ -52,7 +52,7 @@ async function prev(roomId: string, hash: string) {
         .set('Content-Type', 'application/json');
 }
 
-const createSong = (id: string) => ({ id, title: `Song ${id}`, url: `url/${id}` });
+const createSong = (id: string) => ({ id, title: `Song ${id}`, url: `https://example.com/${id}` });
 
 async function createRoom(roomId: string) {
     return request(server).post(`/api/createRoom?roomId=${ roomId }`);

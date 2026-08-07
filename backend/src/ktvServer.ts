@@ -9,6 +9,7 @@ import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
+import { validateRoomId, validateSong } from "@/validation";
 
 const DURATION_MULTIPLIERS = {
     ms: 1,
@@ -56,7 +57,6 @@ export function runKTVServer(storage: Storage) {
     const SEARCH_CLICK_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 
     // 校验 roomId
-    const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]{1,20}$/;
     const BVID_REGEX = /^BV[a-zA-Z0-9]{10}$/;
     const CACHE_EXPIRE_TIME = parseDurationMs(process.env.CACHE_DATA_EXPIRE_TIME, DEFAULT_CACHE_DATA_EXPIRE_TIME);
     const CACHE_OP_EXPIRE_TIME = parseDurationMs(process.env.CACHE_OP_EXPIRE_TIME, DEFAULT_CACHE_OP_EXPIRE_TIME);
@@ -195,9 +195,8 @@ export function runKTVServer(storage: Storage) {
     router.post('/api/createRoom', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
-        if (!ROOM_ID_REGEX.test(roomId)) {
-            return koaCtx.body = { success: false, msg: 'Invalid Room ID' };
-        }
+        const roomIdError = validateRoomId(roomId);
+        if (roomIdError) return koaCtx.body = { success: false, msg: roomIdError };
         const created = await storage.setIfAbsent(DATABASE_NAME, roomId, songListTools.getEmptySongLists(), CACHE_EXPIRE_TIME);
         if (!created) {
             ktvLogger.debug('CREATE REJECT', roomId, 'already exists');
@@ -213,7 +212,7 @@ export function runKTVServer(storage: Storage) {
     router.get('/api/roomExists', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
-        if (!ROOM_ID_REGEX.test(roomId)) {
+        if (validateRoomId(roomId)) {
             return koaCtx.body = { exists: false };
         }
         const roomData = await storage.get(DATABASE_NAME, roomId);
@@ -746,13 +745,18 @@ export function runKTVServer(storage: Storage) {
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
-        if (!ROOM_ID_REGEX.test(roomId)) {
+        const roomIdError = validateRoomId(roomId);
+        if (roomIdError) {
             ktvLogger.debug('REJECT', 'Invalid Room ID')
-            return koaCtx.body = { success: false, msg: 'Invalid Room ID' };
+            return koaCtx.body = { success: false, msg: roomIdError };
         }
         const body = koaCtx.request.body as SongOperationBody;
         const { idArrayHash, song, toIndex } = body;
         ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
+
+        // 歌曲字段校验（解析前拦截非法数据，也避免非字符串 url 触发后续解析报错）
+        const songError = validateSong(song);
+        if (songError) return koaCtx.body = { success: false, msg: songError };
 
         // 如果是 B 站链接
         if (song && song.url && !song.url.startsWith('bilibili://') && (song.url.includes('b23.tv') || song.url.includes('bilibili.com') || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
@@ -765,6 +769,10 @@ export function runKTVServer(storage: Storage) {
                 }
             }
         }
+
+        // 解析后再次校验（B站解析可能改写 url / 追加分P到标题）
+        const finalSongError = validateSong(song);
+        if (finalSongError) return koaCtx.body = { success: false, msg: finalSongError };
 
         // 确保房间存在，防止对不存在的房间写入数据
         const allSongLists = await ensureRoom(roomId);
