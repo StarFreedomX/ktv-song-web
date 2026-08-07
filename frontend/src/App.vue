@@ -1155,6 +1155,7 @@ onUnmounted(() => {
         :active="activeTab === 'queue'"
         v-model:queueList="queueList"
         :is-favorited="isFavorited"
+        :dragging="isDragging"
         @drag-start="isDragging = true"
         @end="isDragging = false"
         @drag-change="onDragChange"

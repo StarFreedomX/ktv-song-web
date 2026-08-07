@@ -156,6 +156,12 @@ body {
     text-decoration: underline;
 }
 
+/* 拖拽期间抑制标题 hover 变色（与 QueueList 内 scoped 规则对应，覆盖本全局规则） */
+.queue-list-container.dragging .song-card:hover .flex-1 .font-bold {
+    color: var(--text-title);
+    text-decoration: none;
+}
+
 @keyframes slideOutToRight {
     from {
         opacity: 1;

@@ -19,3 +19,4 @@ tsconfig.tsbuildinfo
 *.lock
 /yarn.lock
 .env.local
+/.playwright-mcp/
