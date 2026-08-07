@@ -14,6 +14,7 @@ import NicknameModal from "./modals/NicknameModal.vue";
 import BottomNav from "./modals/BottomNav.vue";
 import QueueList from "./modals/QueueList.vue";
 import HistoryList from "./modals/HistoryList.vue";
+import ComfirmButton from "./modals/components/ComfirmButton.vue";
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
@@ -88,6 +89,7 @@ const showShuffleConfirm = ref(false);
 const showSettings = ref(false);
 const showAddModal = ref(false);
 const showBiliSearchModal = ref(false);
+const roomNotFound = ref(false);
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -736,15 +738,22 @@ async function shuffleSongs() {
 
 const load = async () => {
     if (isDragging.value) return;
+    if (roomNotFound.value) return;
     try {
         const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${lastHash.value}`;
-        const res = await fetch(url).then(r => r.json());
+        const res = await fetch(url);
+        if (res.status === 404) {
+            roomNotFound.value = true;
+            stopSyncDrivers();
+            return;
+        }
+        const data = await res.json();
 
-        if (res.changed) {
+        if (data.changed) {
             const oldQueued = [...queued.value];
 
             // 直接处理新的 SongLists 返回结构
-            const lists = res.list;
+            const lists = data.list;
             const queuedArr = lists.queued || [];
             const newQueuedSongsData = [...queuedArr];
 
@@ -754,11 +763,11 @@ const load = async () => {
             // 如果新数据就是空的，直接赋值并更新 Hash，跳过后续复杂的 LIS 计算
             if (lists.queued.length === 0) {
                 queued.value = [];
-                lastHash.value = res.hash || EMPTY_HASH;
+                lastHash.value = data.hash || EMPTY_HASH;
                 return;
             }
 
-            lastHash.value = res.hash;
+            lastHash.value = data.hash;
 
             // 计算 ID 映射（仅基于 queued）
             const oldIdMap = new Map();
@@ -985,6 +994,7 @@ const initPolling = () => {
 
 // 监听模式变化，切换驱动源
 watch(() => cfg.value.wsMode, (isWS) => {
+    if (roomNotFound.value) return;
     stopSyncDrivers();
     if (isWS) {
         initWebSocket();
@@ -993,7 +1003,19 @@ watch(() => cfg.value.wsMode, (isWS) => {
     }
 });
 
-onMounted(() => {
+onMounted(async () => {
+    // 房间存在性校验：不存在则进入“房间不存在”全屏状态
+    try {
+        const res = await fetch(`api/roomExists?roomId=${encodeURIComponent(roomId.value ?? '')}`).then(r => r.json());
+        if (!res.exists) {
+            roomNotFound.value = true;
+            return;
+        }
+    } catch (e) {
+        // 网络异常时按房间存在处理，避免误报
+        console.error('Room Exists Check Error:', e);
+    }
+
     if (!cfg.value.nickname) showNicknameModal.value = true;
 
     // 首次进入：触发状态机拉取数据
@@ -1015,6 +1037,31 @@ onUnmounted(() => {
 
 <template>
     <div class="brand-theme">
+
+    <div v-if="roomNotFound" class="room-not-found-overlay">
+        <div class="room-not-found-card">
+            <div class="inline-block relative">
+                <img
+                    src="/exclamation.svg"
+                    class="absolute -left-9 top-2 w-10 h-10 object-contain"
+                    alt=""
+                />
+                <h1 class="text-3xl font-black text-slate-800 mb-1">KTV Queue</h1>
+                <div class="h-1 w-full bg-[var(--brand-color)] rounded-full"></div>
+            </div>
+
+            <h2 class="room-not-found-title">房间不存在或已失效</h2>
+            <p class="room-not-found-desc">房间可能已被删除，或链接已失效。请返回首页重新创建或加入房间。</p>
+
+            <ComfirmButton
+                type="primary"
+                class="w-full mt-8"
+                @click="backHome()"
+            >
+                返回首页
+            </ComfirmButton>
+        </div>
+    </div>
 
     <header class="mb-6">
         <div class="flex justify-between items-start">
@@ -1412,5 +1459,37 @@ onUnmounted(() => {
 }
 .tab-btn.inactive {
     @apply text-slate-400 hover:text-slate-600;
+}
+
+/* 7. 房间不存在全屏状态（贴合 Home 卡片质感） */
+.room-not-found-overlay {
+    @apply fixed inset-0 z-50 flex items-center justify-center p-4;
+    background-color: var(--brand-color-bg);
+}
+
+.room-not-found-card {
+    @apply w-full max-w-sm bg-[#FEFEFC]/95 backdrop-blur-sm p-8 rounded-xl border-4 border-slate-100 shadow-2xl text-center;
+    animation: roomFadeUp 0.5s ease-out;
+}
+
+.room-not-found-title {
+    @apply mt-8 text-2xl font-black;
+    color: var(--text-main);
+}
+
+.room-not-found-desc {
+    @apply mt-3 text-sm font-bold leading-relaxed;
+    color: var(--text-sub);
+}
+
+@keyframes roomFadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 </style>

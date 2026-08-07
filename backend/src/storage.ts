@@ -94,6 +94,18 @@ export class Storage {
         await this.client.set(redisKey, payload);
     }
 
+    async setIfAbsent<T>(namespace: string, key: string, value: T, ttlMs?: number): Promise<boolean> {
+        if (!this.client.isOpen) return false;
+        const redisKey = `${namespace}_${key}`;
+        const payload = JSON.stringify(value);
+        if (typeof ttlMs === 'number' && ttlMs > 0) {
+            const result = await this.client.set(redisKey, payload, { NX: true, PX: ttlMs });
+            return result === 'OK';
+        }
+        const result = await this.client.set(redisKey, payload, { NX: true });
+        return result === 'OK';
+    }
+
     async get<T>(namespace: string, key: string): Promise<T | undefined> {
         if (!this.client.isOpen) return undefined;
         const redisKey = `${namespace}_${key}`;
