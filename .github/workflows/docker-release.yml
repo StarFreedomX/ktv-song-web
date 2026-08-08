@@ -11,6 +11,9 @@ on:
 jobs:
     docker-build-push:
         runs-on: ubuntu-latest
+        env:
+            # 仅 v* tag 才发布；push 到 master 和手动触发都只构建
+            IS_PUBLISH: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
         permissions:
             contents: read
             packages: write
@@ -30,6 +33,7 @@ jobs:
                 uses: docker/setup-buildx-action@v4
 
             -   name: Login to GitHub Container Registry
+                if: ${{ env.IS_PUBLISH }}
                 uses: docker/login-action@v4
                 with:
                     registry: ghcr.io
@@ -54,7 +58,7 @@ jobs:
                     context: .
                     # 指定各自文件夹下的 Dockerfile
                     file: ./${{ matrix.component }}/Dockerfile
-                    push: true
+                    push: ${{ env.IS_PUBLISH }}
                     tags: ${{ steps.meta.outputs.tags }}
                     labels: ${{ steps.meta.outputs.labels }}
                     # 使用 GitHub Actions 缓存加速构建
