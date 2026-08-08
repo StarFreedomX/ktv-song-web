@@ -29,7 +29,7 @@ RUN export PROJECT_ROOT=/app/backend/ && \
     rm -rf /app/backend/app-minimal
 
 # --- 阶段 2: 运行 ---
-FROM ghcr.io/starfreedomx/alpine-nodejs-minimize:22-alpine3.21 AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # 设置环境变量
