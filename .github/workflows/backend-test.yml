@@ -34,15 +34,15 @@ jobs:
         steps:
             # 1. 检出代码
             -   name: Checkout code
-                uses: actions/checkout@v4
+                uses: actions/checkout@v5
 
             # 2. 安装 pnpm (必须在 setup-node 之前)
             -   name: Install pnpm
-                uses: pnpm/action-setup@v4
+                uses: pnpm/action-setup@v6
 
             # 3. 安装 Node.js 环境
             -   name: Use Node.js ${{ matrix.node-version }}
-                uses: actions/setup-node@v4
+                uses: actions/setup-node@v7
                 with:
                     node-version: ${{ matrix.node-version }}
                     # 修改为缓存 pnpm 依赖
