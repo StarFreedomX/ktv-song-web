@@ -10,7 +10,7 @@ export const MAX_ROOM_ID_LENGTH = 20;
 // 格式：房间号只允许字母/数字/下划线/连字符；歌曲 ID 允许字母/数字/下划线/连字符/点/冒号
 export const ROOM_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 export const SONG_ID_REGEX = /^[a-zA-Z0-9_:.-]+$/;
-const URL_SCHEME_ALLOWLIST = new Set(['http:', 'https:', 'bilibili:']);
+const ALLOWED_URL_PREFIXES = ['http://', 'https://', 'bilibili://'];
 
 // 每个校验函数：合法返回 null，非法返回错误消息字符串（供接口直接回给前端）
 
@@ -37,14 +37,19 @@ export function validateSongTitle(title: unknown): string | null {
 export function validateSongUrl(url: unknown): string | null {
     if (typeof url !== 'string' || url.trim().length === 0) return '歌曲链接不能为空';
     if (url.trim().length > MAX_SONG_URL_LENGTH) return `歌曲链接过长（最多 ${MAX_SONG_URL_LENGTH} 个字符）`;
-    let parsed: URL;
-    try {
-        parsed = new URL(url.trim());
-    } catch {
-        return '歌曲链接格式不合法';
-    }
-    if (!URL_SCHEME_ALLOWLIST.has(parsed.protocol)) return '歌曲链接仅支持 http/https/bilibili 协议';
+    if (!ALLOWED_URL_PREFIXES.some(p => url.trim().startsWith(p))) return '歌曲链接仅支持 http/https/bilibili 协议';
     return null;
+}
+
+// 链接归一化：已带白名单协议原样返回；纯 BV/av 号转成 B 站视频链接；其余前置 https://（中和自定义协议）
+export function normalizeSongUrl(url: string): string {
+    const trimmed = url.trim();
+    if (ALLOWED_URL_PREFIXES.some(p => trimmed.startsWith(p))) return trimmed;
+    const bvMatch = trimmed.match(/^BV[a-zA-Z0-9]{10}$/i);
+    if (bvMatch) return `https://www.bilibili.com/video/${bvMatch[0]}`;
+    const avMatch = trimmed.match(/^av\d+$/i);
+    if (avMatch) return `https://www.bilibili.com/video/${avMatch[0]}`;
+    return `https://${trimmed}`;
 }
 
 export function validateAddedBy(addedBy: unknown): string | null {

@@ -9,7 +9,7 @@ import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
-import { validateRoomId, validateSong } from "@/validation";
+import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
 
 const DURATION_MULTIPLIERS = {
     ms: 1,
@@ -753,6 +753,11 @@ export function runKTVServer(storage: Storage) {
         const body = koaCtx.request.body as SongOperationBody;
         const { idArrayHash, song, toIndex } = body;
         ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
+
+        // 链接归一化：非 http/https/bilibili 开头自动补 https://；纯 BV/av 号转成 B 站视频链接
+        if (song && typeof song.url === 'string') {
+            song.url = normalizeSongUrl(song.url);
+        }
 
         // 歌曲字段校验（解析前拦截非法数据，也避免非字符串 url 触发后续解析报错）
         const songError = validateSong(song);
