@@ -15,6 +15,7 @@ import BottomNav from "./modals/BottomNav.vue";
 import QueueList from "./modals/QueueList.vue";
 import HistoryList from "./modals/HistoryList.vue";
 import ComfirmButton from "./modals/components/ComfirmButton.vue";
+import Toast from "./components/Toast.vue";
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
@@ -142,6 +143,15 @@ const showTransientStatus = (status, delay = 1000) => {
             currentSync.value = SyncStatus.POLLING_IDLE;
         }
     }, delay);
+};
+
+// 全局操作失败提示（toast）：展示后端返回的错误原因
+const toastMsg = ref('');
+let toastTimer = null;
+const showToast = (msg) => {
+    toastMsg.value = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { toastMsg.value = ''; }, 2500);
 };
 
 const copyRoomLink = async () => {
@@ -345,6 +355,9 @@ const commitOp = async (opData) => {
             // 如果被拒绝，说明前端 Hash 过时
             lastHash.value = EMPTY_HASH; // 重置
             updateStatus.value = UpdateStatus.WAITING;
+        } else if (res.msg) {
+            // 其他失败（校验不通过、房间不存在等）：toast 提示后端原因
+            showToast(res.msg);
         }
     } catch (e) {
         console.error("API Error:", e);
@@ -400,9 +413,8 @@ const enqueueSong = async ({ title, url, onSuccess }) => {
         isNew: true
     };
 
-    // 插入到 queued 中
+    // 插入到 queued 中（乐观更新；失败时回滚并保留表单内容，方便修改重试）
     queued.value.splice(effectiveLen, 0, newSong);
-    form.value = { title: '', url: '' };
 
     setTimeout(() => {
         const target = queued.value.find(s => s.id === newSong.id);
@@ -412,7 +424,13 @@ const enqueueSong = async ({ title, url, onSuccess }) => {
     const success = await commitOp({
         song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
     });
-    if (!success) updateStatus.value = UpdateStatus.WAITING;
+    if (!success) {
+        // 失败时回滚乐观插入的歌曲，避免幽灵歌曲留在队列
+        // （后端拒绝不会改变 hash，随后拉取对账会因 changed:false 被跳过，必须主动移除）
+        const ghostIdx = queued.value.findIndex(s => s.id === newSong.id);
+        if (ghostIdx !== -1) queued.value.splice(ghostIdx, 1);
+        updateStatus.value = UpdateStatus.WAITING;
+    }
     else {
         if (typeof onSuccess === 'function') {
             await onSuccess();
@@ -1298,6 +1316,9 @@ onUnmounted(() => {
         v-model="showShuffleConfirm"
         @confirm="shuffleSongs"
     />
+
+    <!-- 全局操作失败提示 -->
+    <Toast :message="toastMsg" />
 
     <!--    底部导航栏       -->
     <BottomNav
