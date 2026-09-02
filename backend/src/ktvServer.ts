@@ -841,7 +841,8 @@ export function runKTVServer(storage: Storage) {
         }
 
         const baseLog = logs.at(hitIdx);
-        if(!baseLog?.baseIdArray || !Array.isArray(baseLog.baseIdArray)){
+        // 当前请求已基于最新列表时不需要历史操作日志；只有变基才依赖 baseLog。
+        if (!latest && (!baseLog?.baseIdArray || !Array.isArray(baseLog.baseIdArray))) {
             return koaCtx.body = { success: false, code: 'REJECT' };
         }
         const baseIdArray = latest ? queueSongList.map(s => s.id) : [...baseLog.baseIdArray];
