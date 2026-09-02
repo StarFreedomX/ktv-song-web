@@ -6,6 +6,34 @@ import { Storage } from "@/storage";
 
 const BILIBILI_USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36';
 const BILIBILI_REFERER = 'https://www.bilibili.com/';
+const BILIBILI_SHORT_HOST = 'b23.tv';
+
+function parseHttpUrl(inputUrl: string): URL | null {
+    const trimmed = inputUrl.trim();
+    if (!trimmed) return null;
+
+    const normalizedUrl = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    try {
+        const url = new URL(normalizedUrl);
+        return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+    } catch {
+        return null;
+    }
+}
+
+function isBilibiliHost(hostname: string) {
+    const normalizedHostname = hostname.toLowerCase();
+    return normalizedHostname === BILIBILI_SHORT_HOST
+        || normalizedHostname === 'bilibili.com'
+        || normalizedHostname.endsWith('.bilibili.com');
+}
+
+function isBilibiliUrl(inputUrl: unknown): boolean {
+    if (typeof inputUrl !== 'string') return false;
+    const parsedUrl = parseHttpUrl(inputUrl);
+    return !!parsedUrl && isBilibiliHost(parsedUrl.hostname);
+}
+
 // Tags used to construct B站 search queries — changing this list adds API calls.
 const BILIBILI_SEARCH_TAGS = ['カラオケ', 'ニコカラ', '纯k自用', '卡拉OK'] as const;
 // Tags detected in video titles — expanding this list costs nothing extra.
@@ -517,8 +545,6 @@ function filterCachedBilibiliSearchVideos(items: BilibiliSearchVideo[], keyword:
  * @returns 返回提取到的 BV 号
  */
 async function resolveBilibiliData(inputUrl: string) {
-    let targetUrl = inputUrl;
-
     // If it's already our internal protocol, just normalize and preserve page.
     if (inputUrl.startsWith('bilibili://')) {
         try {
@@ -542,22 +568,36 @@ async function resolveBilibiliData(inputUrl: string) {
         }
     }
 
-    if (inputUrl.includes('b23.tv')) {
+    const parsedInputUrl = parseHttpUrl(inputUrl);
+    if (!parsedInputUrl || !isBilibiliHost(parsedInputUrl.hostname)) return null;
+
+    let targetUrl = parsedInputUrl.href;
+    if (parsedInputUrl.hostname.toLowerCase() === BILIBILI_SHORT_HOST) {
+        const getRedirectTarget = (location: unknown) => {
+            if (typeof location !== 'string' || !location) return parsedInputUrl.href;
+            try {
+                return new URL(location, parsedInputUrl).href;
+            } catch {
+                return parsedInputUrl.href;
+            }
+        };
+
         try {
-            const response = await axios(inputUrl, {
+            const response = await axios(parsedInputUrl.href, {
                 maxRedirects: 0,
                 validateStatus: (status) => status >= 200 && status < 400,
                 headers: { 'User-Agent': 'Mozilla/5.0...' }
             });
-            targetUrl = response.headers['location'] || inputUrl;
-        } catch (error: any) {
-            targetUrl = error?.response?.headers?.location || inputUrl;
+            targetUrl = getRedirectTarget(response.headers['location']);
+        } catch (error: unknown) {
+            const location = axios.isAxiosError(error) ? error.response?.headers?.location : undefined;
+            targetUrl = getRedirectTarget(location);
         }
     }
 
     try {
-        const normalizedUrl = targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`;
-        const urlObj = new URL(normalizedUrl);
+        const urlObj = new URL(targetUrl);
+        if (!isBilibiliHost(urlObj.hostname)) return null;
         const bvMatch = urlObj.pathname.match(/BV[a-zA-Z0-9]{10}/i);
         if (!bvMatch) return null;
 
@@ -895,6 +935,7 @@ export {
     filterCachedBilibiliSearchVideos,
     filterBilibiliSearchVideosByRelevance,
     getBilibiliInstrumentalWarning,
+    isBilibiliUrl,
     mergeBilibiliSearchVideos,
     normalizeBilibiliSearchVideo,
     normalizeSearchText,

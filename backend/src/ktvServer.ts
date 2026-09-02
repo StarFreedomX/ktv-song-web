@@ -7,7 +7,7 @@ import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
 import { Storage } from "@/storage";
-import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
+import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
 
@@ -573,10 +573,15 @@ export function runKTVServer(storage: Storage) {
 
     //解析b站短链接
     router.post('/api/parseLink', async (koaCtx) => {
-        let { link } = koaCtx.request.body as { link: string };
+        let { link } = (koaCtx.request.body || {}) as { link?: unknown };
+        if (typeof link !== 'string') {
+            koaCtx.status = 400;
+            koaCtx.body = { success: false, msg: '链接不能为空' };
+            return;
+        }
         ktvLogger.debug('parse link: ', link)
         // 如果是 B 站链接
-        if (link && !link.startsWith('bilibili://') && (link.includes('b23.tv') || link.includes('bilibili.com') || link.match(/BV[a-zA-Z0-9]{10}/i))) {
+        if (link && !link.startsWith('bilibili://') && (isBilibiliUrl(link) || link.match(/BV[a-zA-Z0-9]{10}/i))) {
             const biliData = await resolveBilibiliData(link);
             if (biliData) {
                 // 更新 URL
@@ -727,6 +732,7 @@ export function runKTVServer(storage: Storage) {
         try {
             const response = await axios.get<ArrayBuffer>(imageUrl, {
                 responseType: 'arraybuffer',
+                maxRedirects: 0,
                 timeout: IMAGE_PROXY_TIMEOUT_MS,
                 maxContentLength: IMAGE_PROXY_MAX_BYTES,
                 maxBodyLength: IMAGE_PROXY_MAX_BYTES,
@@ -781,7 +787,7 @@ export function runKTVServer(storage: Storage) {
         if (songError) return koaCtx.body = { success: false, msg: songError };
 
         // 如果是 B 站链接
-        if (song && song.url && !song.url.startsWith('bilibili://') && (song.url.includes('b23.tv') || song.url.includes('bilibili.com') || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
+        if (song && song.url && !song.url.startsWith('bilibili://') && (isBilibiliUrl(song.url) || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
             const biliData = await resolveBilibiliData(song.url);
             if (biliData) {
                 // 更新 URL
