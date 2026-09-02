@@ -162,8 +162,9 @@ export function runKTVServer(storage: Storage) {
     // WebSocket 路由：处理连接与房间加入
     const wsRouter = new Router();
     wsRouter.all('/api/ws', async (ctx) => {
-        const roomId = ctx.query.roomId as string;
-        if (!roomId) return ctx.websocket.close();
+        const { roomId: roomIds } = ctx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        if (!roomId || validateRoomId(roomId)) return ctx.websocket.close();
         const clientId = (ctx.query.nickname as string) || `anon-${Math.random().toString(36).slice(-4)}`;
         const ws = ctx.websocket as IdentifiedWebSocket;
         if (!roomClients.has(roomId)) roomClients.set(roomId, new Set());
@@ -186,8 +187,8 @@ export function runKTVServer(storage: Storage) {
                 }
             } catch (e) { }
         });
-        ctx.websocket.on('error', (err) => console.error('WS Error Details:', err));
-        ctx.websocket.on('close', (code, reason) => console.log('Closed with:', code, reason));
+        ctx.websocket.on('error', (err: unknown) => console.error('WS Error Details:', err));
+        ctx.websocket.on('close', (code: string, reason: string) => console.log('Closed with:', code, reason));
     });
 
 
@@ -196,7 +197,7 @@ export function runKTVServer(storage: Storage) {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         const roomIdError = validateRoomId(roomId);
-        if (roomIdError) return koaCtx.body = { success: false, msg: roomIdError };
+        if (!roomId || roomIdError) return koaCtx.body = { success: false, msg: roomIdError };
         const created = await storage.setIfAbsent(DATABASE_NAME, roomId, songListTools.getEmptySongLists(), CACHE_EXPIRE_TIME);
         if (!created) {
             ktvLogger.debug('CREATE REJECT', roomId, 'already exists');
@@ -212,7 +213,7 @@ export function runKTVServer(storage: Storage) {
     router.get('/api/roomExists', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
-        if (validateRoomId(roomId)) {
+        if (!roomId || validateRoomId(roomId)) {
             return koaCtx.body = { exists: false };
         }
         const roomData = await storage.get(DATABASE_NAME, roomId);
@@ -223,6 +224,9 @@ export function runKTVServer(storage: Storage) {
     router.get('/api/songListInfo', async (koaCtx) => {
         const { roomId: roomIds, lastHash: clientHashs } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        if (!roomId || validateRoomId(roomId)) {
+            return koaCtx.body = { success: false, msg: '无效的房间号' };
+        }
         const clientHash = Array.isArray(clientHashs) ? clientHashs.at(0) : clientHashs;
         ktvLogger.debug('get: ', roomId, clientHash)
         // 房间不存在时返回 404（不再自动创建空房，避免串房）
@@ -252,9 +256,10 @@ export function runKTVServer(storage: Storage) {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         ktvLogger.debug('shuffle: ', roomId)
-        if (!roomId) {
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) {
             ktvLogger.debug('REJECT', 'Room not found')
-            koaCtx.body = { success: false, msg: 'Room not found' };
+            koaCtx.body = { success: false, msg: roomIdError || '无效的房间号' };
             return;
         }
 
@@ -290,6 +295,10 @@ export function runKTVServer(storage: Storage) {
     router.post('/api/nextSong', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if(!roomId || roomIdError){
+            return koaCtx.body = { success: false, msg: roomIdError };
+        }
         const { idArrayHash } = koaCtx.request.body as { idArrayHash: string };
         ktvLogger.debug('nextSong: ', roomId, idArrayHash)
 
@@ -372,6 +381,10 @@ export function runKTVServer(storage: Storage) {
     router.post('/api/prevSong', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if(!roomId || roomIdError){
+            return koaCtx.body = { success: false, msg: roomIdError };
+        }
         const { idArrayHash } = koaCtx.request.body as { idArrayHash: string };
         ktvLogger.debug('prevSong: ', roomId, idArrayHash)
 
@@ -480,6 +493,10 @@ export function runKTVServer(storage: Storage) {
     router.post('/api/undoSung', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if(!roomId || roomIdError){
+            return koaCtx.body = { success: false, msg: roomIdError };
+        }
         const { idArrayHash, songId } = koaCtx.request.body as { idArrayHash: string, songId?: string };
         ktvLogger.debug('undoSung: ', roomId, idArrayHash, songId)
 
@@ -746,7 +763,7 @@ export function runKTVServer(storage: Storage) {
         const { roomId: roomIds } = koaCtx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         const roomIdError = validateRoomId(roomId);
-        if (roomIdError) {
+        if (!roomId || roomIdError) {
             ktvLogger.debug('REJECT', 'Invalid Room ID')
             return koaCtx.body = { success: false, msg: roomIdError };
         }
@@ -818,6 +835,9 @@ export function runKTVServer(storage: Storage) {
         }
 
         const baseLog = logs.at(hitIdx);
+        if(!baseLog?.baseIdArray || !Array.isArray(baseLog.baseIdArray)){
+            return koaCtx.body = { success: false, code: 'REJECT' };
+        }
         const baseIdArray = latest ? queueSongList.map(s => s.id) : [...baseLog.baseIdArray];
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
 

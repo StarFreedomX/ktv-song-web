@@ -550,8 +550,8 @@ async function resolveBilibiliData(inputUrl: string) {
                 headers: { 'User-Agent': 'Mozilla/5.0...' }
             });
             targetUrl = response.headers['location'] || inputUrl;
-        } catch (error) {
-            targetUrl = error.response?.headers?.location || inputUrl;
+        } catch (error: any) {
+            targetUrl = error?.response?.headers?.location || inputUrl;
         }
     }
 

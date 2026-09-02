@@ -15,7 +15,7 @@ const ALLOWED_URL_PREFIXES = ['http://', 'https://', 'bilibili://'];
 // 每个校验函数：合法返回 null，非法返回错误消息字符串（供接口直接回给前端）
 
 export function validateRoomId(roomId: unknown): string | null {
-    if (typeof roomId !== 'string' || roomId.length === 0) return '无效的房间号';
+    if (roomId === undefined || typeof roomId !== 'string' || roomId.length === 0) return '无效的房间号';
     if (roomId.length > MAX_ROOM_ID_LENGTH) return `房间号过长（最多 ${MAX_ROOM_ID_LENGTH} 个字符）`;
     if (!ROOM_ID_REGEX.test(roomId)) return '房间号只能包含字母、数字、下划线或连字符';
     return null;
