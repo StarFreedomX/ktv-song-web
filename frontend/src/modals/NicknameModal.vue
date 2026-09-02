@@ -120,12 +120,5 @@ const handleSave = () => {
     box-shadow: none;
 }
 
-/* 过渡动画 */
-.modal-fade-enter-active, .modal-fade-leave-active {
-    transition: opacity 0.4s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.modal-fade-enter-from, .modal-fade-leave-to {
-    opacity: 0;
-    transform: translateY(20px) scale(0.9);
-}
+
 </style>

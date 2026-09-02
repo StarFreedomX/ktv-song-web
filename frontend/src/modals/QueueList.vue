@@ -1,5 +1,5 @@
 <template>
-    <div v-show="active" class="queue-list-container">
+    <div v-show="active" class="queue-list-container" :class="{ dragging }">
         <draggable
             :model-value="queueList"
             @update:model-value="$emit('update:queueList', $event)"
@@ -88,7 +88,8 @@ import draggable from 'vuedraggable';
 defineProps({
     active: Boolean,
     queueList: Array,
-    isFavorited: Function
+    isFavorited: Function,
+    dragging: Boolean
 });
 
 defineEmits([
@@ -124,7 +125,7 @@ defineEmits([
 }
 
 .song-card {
-    @apply mb-3 p-4 rounded-2xl border flex items-center transition-all;
+    @apply mb-3 p-4 rounded-2xl border flex items-center;
     background-color: var(--card-bg);
     border-color: var(--card-border);
     box-shadow: var(--card-shadow);
@@ -160,6 +161,12 @@ defineEmits([
 
 .song-card:hover .song-title {
     color: var(--text-active);
+}
+
+/* 拖拽期间抑制 hover 变色：sortable 重排后浏览器可能把 :hover 卡在错误卡片上，
+   导致"位置3的卡标题变红"这类假悬停，拖拽中统一保持标题原色 */
+.queue-list-container.dragging .song-card:hover .song-title {
+    color: var(--text-title);
 }
 
 .song-meta {

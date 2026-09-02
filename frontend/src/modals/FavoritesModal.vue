@@ -248,14 +248,7 @@ defineEmits([
     @apply mt-6 space-y-3;
 }
 
-/* 过渡动画 */
-.modal-fade-enter-active, .modal-fade-leave-active {
-    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.modal-fade-enter-from, .modal-fade-leave-to {
-    opacity: 0;
-    transform: scale(0.95);
-}
+
 
 /* 自定义滚动条对接主题色 */
 .custom-scrollbar::-webkit-scrollbar {

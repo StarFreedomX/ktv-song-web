@@ -17,5 +17,9 @@ tsconfig.tsbuildinfo
 *.njsproj
 *.sln
 *.lock
+.pnpm-store/
+.trae/
+.env
 /yarn.lock
 .env.local
+/.playwright-mcp/

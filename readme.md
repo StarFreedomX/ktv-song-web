@@ -27,7 +27,7 @@
 - **全局搜索目录 TTL**：默认 `14 days`，对应 `SEARCH_CATALOG_EXPIRE_TIME`。搜索目录是全局共用的，设置位置在 `saveSearchCatalog()`。
 - **全局点击热度 TTL**：默认 `365 days`，设置在 `/api/bilibiliSearch/select` 里。它用于给 B 站搜索结果排序，不按房间区分。
 
-这些 TTL 的默认值都在 `backend/src/ktvServer.ts` 顶部定义，运行时会优先读取环境变量；Docker 开发调试时可以在 `docker-compose.yml` 里直接改对应的 `environment`。  
+这些 TTL 的默认值都在 `backend/src/ktvServer.ts` 顶部定义，运行时会优先读取环境变量；Docker 开发调试时可以在 `docker-compose.yml` 里直接改对应的 `environment`。
 当前支持的时间格式包括：`ms`、`s`、`m`、`h`、`d`，例如 `5m`、`1h`、`24h`、`1d` 都可以直接写。
 
 ### normalize 是怎么做的
@@ -222,9 +222,26 @@ docker compose logs -f ktv-web-backend
 docker compose logs -f ktv-web-frontend
 ```
 
-访问：`http://localhost:5526/?roomId=demo`
+访问：`http://localhost:5526/`（首页创建或加入房间；房间需要先创建，创建成功后即可分享链接，如 `http://localhost:5526/?roomId=demo`）
 
-如果你想直接调后端接口，也可以访问：`http://localhost:5823/api/songListInfo?roomId=demo`
+如果你想直接调后端接口，可以先用 POST 创建演示房间：
+
+```shell
+curl -X POST "http://localhost:5823/api/createRoom?roomId=demo"
+```
+
+然后再访问：`http://localhost:5823/api/songListInfo?roomId=demo`
+
+> 注意：`/api/songListInfo` 对**不存在的房间**会返回 `404`（`{"success":false,"msg":"房间不存在"}`），不再像以前那样"进空房间自动建房"。这样可以避免两拨人使用同一个房间号导致串房。
+
+#### 房间创建 / 加入逻辑
+
+- 首页提供**创建房间**和**加入房间**两个入口，输入同一个房间号时行为完全不同：
+  - **创建房间**：`POST /api/createRoom?roomId=X`，房间已存在时返回 `{"success":false,"msg":"房间已存在"}`；不存在则原子创建并返回 `{"success":true,"roomId":X}`。
+  - **加入房间**：`GET /api/roomExists?roomId=X` 校验房间存在（`{"exists":true|false}`）后再进入；不存在会提示"房间不存在，请先创建房间"。
+- 后端通过 Redis `SET NX` 原子创建房间，两拨人同时抢同一个房间号时只有一方能成功。
+- 直连分享链接访问不存在的房间时，前端会显示"房间不存在或已失效"并引导返回首页，不会自动建房。
+- 房间创建时写入空的 `ktv_room_<roomId>` 数据，TTL 与歌曲列表一致（默认 `1 day`，对应 `CACHE_DATA_EXPIRE_TIME`）。
 
 #### 默认配置
 

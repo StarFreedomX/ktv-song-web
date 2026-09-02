@@ -25,15 +25,35 @@
                     class="w-full px-6 py-5 bg-[#DDDDDB] rounded-xl text-center text-4xl font-bold tracking-widest text-slate-700 outline-none border-4 border-transparent focus:border-[#FE3C71]/20 transition-all placeholder:text-slate-300"
                     placeholder="88888"
                     autofocus
-                    @keyup.enter="joinRoom"
+                    @keyup.enter="createRoom"
+                    @input="clearError"
                 >
 
-                <button
-                    @click="joinRoom"
-                    class="game-btn w-full"
+                <p
+                    v-if="errorMsg"
+                    class="text-red-500 text-sm font-bold text-center -mt-1"
                 >
-                    进入房间
-                </button>
+                    {{ errorMsg }}
+                </p>
+
+                <div class="flex gap-3">
+                    <ComfirmButton
+                        type="primary"
+                        class="flex-1"
+                        :disabled="createLoading || joinLoading"
+                        @click="createRoom"
+                    >
+                        创建房间
+                    </ComfirmButton>
+                    <ComfirmButton
+                        type="secondary"
+                        class="flex-1"
+                        :disabled="createLoading || joinLoading"
+                        @click="joinRoom"
+                    >
+                        加入房间
+                    </ComfirmButton>
+                </div>
             </div>
 
             <div class="mt-8 flex flex-col items-center gap-4">
@@ -58,71 +78,80 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
+import ComfirmButton from './modals/components/ComfirmButton.vue';
 
 const router = useRouter();
 const roomInput = ref('');
+const errorMsg = ref('');
+const createLoading = ref(false);
+const joinLoading = ref(false);
 
-const joinRoom = () => {
-    if (roomInput.value) {
-        router.push({
-            name: 'Room',
-            query: { roomId: roomInput.value }
-        });
+const createRoomUrl = "api/createRoom";
+const roomExistsUrl = "api/roomExists";
+
+const clearError = () => {
+    errorMsg.value = '';
+};
+
+const createRoom = async () => {
+    if (createLoading.value || joinLoading.value) return;
+    const roomId = roomInput.value;
+    if (!roomId) {
+        errorMsg.value = '请输入房间号';
+        return;
+    }
+    createLoading.value = true;
+    errorMsg.value = '';
+    try {
+        const res = await fetch(`${createRoomUrl}?roomId=${encodeURIComponent(roomId)}`, { method: 'POST' });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+            errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+        } else if (data.success) {
+            router.push({ name: 'Room', query: { roomId } });
+        } else if (data.msg === '房间已存在') {
+            errorMsg.value = '该房间号已被占用，请更换房间号；若确认是同伴的房间，请使用“加入房间”';
+        } else {
+            errorMsg.value = data.msg || '创建房间失败';
+        }
+    } catch (e) {
+        console.error('Create Room Error:', e);
+        errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+    } finally {
+        createLoading.value = false;
+    }
+};
+
+const joinRoom = async () => {
+    if (createLoading.value || joinLoading.value) return;
+    const roomId = roomInput.value;
+    if (!roomId) {
+        errorMsg.value = '请输入房间号';
+        return;
+    }
+    joinLoading.value = true;
+    errorMsg.value = '';
+    try {
+        const res = await fetch(`${roomExistsUrl}?roomId=${encodeURIComponent(roomId)}`);
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+            errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+        } else if (data.exists) {
+            router.push({ name: 'Room', query: { roomId } });
+        } else {
+            errorMsg.value = '房间不存在，请先创建房间';
+        }
+    } catch (e) {
+        console.error('Join Room Error:', e);
+        errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+    } finally {
+        joinLoading.value = false;
     }
 };
 </script>
 
 <style scoped>
 @reference "tailwindcss";
-
-.game-btn {
-    /* =========================================
-       1. 尺寸与位移参数 (对齐你的要求)
-       ========================================= */
-    --btn-padding-y: 0.5rem;           /* 纵向内边距 */
-    --btn-press-move: 2px;            /* 点击下沉位移 */
-
-    /* =========================================
-       2. 拟物边缘精细调节
-       ========================================= */
-    --btn-top-rim-offset: 0px;        /* 顶部边线偏移 */
-    --btn-top-rim-spread: 1px;        /* 顶部边线粗细 */
-    --btn-thickness: 2px;             /* 默认厚度 */
-    --btn-active-thickness: 2px;      /* 按下后的剩余厚度 (你设置的2px，即按下不减厚度) */
-    --btn-bottom-rim-spread: 1px;     /* 底部边线粗细 */
-
-    /* =========================================
-       3. 颜色变量 (对齐 Home 页配色)
-       ========================================= */
-    --btn-main-border: white;
-    --btn-outer-shadow: #E2E8F0;
-    --btn-bg: var(--brand-color, #FE3C71);
-    --btn-text: white;
-    --btn-shadow-dark: #D6285A;
-
-    /* --- 基础样式 --- */
-    @apply relative font-black transition-all active:scale-95 rounded-xl text-xl;
-    background-color: var(--btn-bg);
-    color: var(--btn-text);
-    padding-top: var(--btn-padding-y);
-    padding-bottom: var(--btn-padding-y);
-    border: 3px solid var(--btn-main-border);
-    cursor: pointer;
-
-    /* 初始阴影状态 */
-    box-shadow:
-        0 var(--btn-top-rim-offset) 0 var(--btn-top-rim-spread) var(--btn-outer-shadow),
-        0 var(--btn-thickness) 0 var(--btn-bottom-rim-spread) var(--btn-outer-shadow),
-        0 var(--btn-thickness) 0 0 var(--btn-shadow-dark);
-}
-
-.game-btn:active {
-    transform: translateY(var(--btn-press-move));
-    box-shadow:
-        0 var(--btn-top-rim-offset) 0 var(--btn-top-rim-spread) var(--btn-outer-shadow),
-        0 var(--btn-active-thickness) 0 var(--btn-bottom-rim-spread) var(--btn-outer-shadow),
-        0 var(--btn-active-thickness) 0 0 var(--btn-shadow-dark);
-}
 
 input::placeholder {
     color: #505050;

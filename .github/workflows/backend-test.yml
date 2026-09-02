@@ -9,6 +9,7 @@ on:
         branches: [ "master" ]
         paths:
             - 'backend/**'
+    workflow_dispatch:
 
 jobs:
     build-and-test:
@@ -27,21 +28,21 @@ jobs:
 
         strategy:
             matrix:
-                # 建议使用稳定版 20 和 22
-                node-version: [ 20.x, 22.x ]
+                # pnpm 11.20 要求 Node >= 22.13，且 Node 20 已弃用；生产镜像用 node:22，故只测 22.x
+                node-version: [ 22.x ]
 
         steps:
             # 1. 检出代码
             -   name: Checkout code
-                uses: actions/checkout@v4
+                uses: actions/checkout@v5
 
             # 2. 安装 pnpm (必须在 setup-node 之前)
             -   name: Install pnpm
-                uses: pnpm/action-setup@v4
+                uses: pnpm/action-setup@v6
 
             # 3. 安装 Node.js 环境
             -   name: Use Node.js ${{ matrix.node-version }}
-                uses: actions/setup-node@v4
+                uses: actions/setup-node@v7
                 with:
                     node-version: ${{ matrix.node-version }}
                     # 修改为缓存 pnpm 依赖
