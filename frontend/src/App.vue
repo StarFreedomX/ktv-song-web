@@ -16,6 +16,7 @@ import QueueList from "./modals/QueueList.vue";
 import HistoryList from "./modals/HistoryList.vue";
 import ComfirmButton from "./modals/components/ComfirmButton.vue";
 import Toast from "./components/Toast.vue";
+import { rememberRoom } from './roomHistory';
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
@@ -39,6 +40,7 @@ const UpdateStatus = Object.freeze({
 const route = useRoute();
 const roomIdFromUrl = route.query.roomId;
 const roomId = ref(roomIdFromUrl);
+const roomUuid = ref('');
 const copyLinkStatus = ref('');
 const helpUrl = 'https://jcntv1iqoo5s.feishu.cn/wiki/Ytt1wNh88i6E9jkEndhcxNmYnBd';
 
@@ -767,6 +769,12 @@ const load = async () => {
         }
         const data = await res.json();
 
+        const loadedUuid = data.list?.uuid || data.uuid || '';
+        if (roomUuid.value !== loadedUuid) {
+            roomUuid.value = loadedUuid;
+            try { rememberRoom({ uuid: loadedUuid, roomId: roomId.value }); }
+            catch { showToast('无法保存历史房间，请检查浏览器本地存储权限'); }
+        }
         if (data.changed) {
             const oldQueued = [...queued.value];
 
@@ -1131,10 +1139,10 @@ onUnmounted(() => {
         </div>
         <div class="mt-2">
             <div class="flex items-center gap-2">
-                <p class="text-sub">房间ID: {{ roomId }}</p>
+                <p class="text-sub min-w-0 break-all">房间ID: {{ roomId }}</p>
                 <button
                     type="button"
-                    class="cursor-pointer"
+                    class="cursor-pointer shrink-0"
                     :class="['copy-link-btn', { copied: copyLinkStatus }]"
                     :aria-label="copyLinkStatus || '复制房间链接'"
                     :title="copyLinkStatus || '复制房间链接'"
@@ -1172,6 +1180,7 @@ onUnmounted(() => {
                     <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
                 </button>
             </div>
+            <p v-if="roomUuid" class="text-[10px] text-slate-400 break-all mt-1">UUID: {{ roomUuid }}</p>
             <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
         </div>
     </header>

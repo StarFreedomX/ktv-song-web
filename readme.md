@@ -107,6 +107,8 @@ services:
         restart: always
         depends_on:
             - redis
+        volumes:
+            - ktv_room_archive:/app/data # 房间存档 SQLite 数据（持久化，force-recreate 不丢）
 
     # 前端服务
     ktv-web-frontend:
@@ -129,6 +131,7 @@ services:
 
 volumes:
     redis_data:
+    ktv_room_archive:
 ```
 
 启动
@@ -243,6 +246,18 @@ curl -X POST "http://localhost:5823/api/createRoom?roomId=demo"
 - 直连分享链接访问不存在的房间时，前端会显示"房间不存在或已失效"并引导返回首页，不会自动建房。
 - 房间创建时写入空的 `ktv_room_<roomId>` 数据，TTL 与歌曲列表一致（默认 `1 day`，对应 `CACHE_DATA_EXPIRE_TIME`）。
 
+#### 房间存档（历史只读数据）
+
+- 房间号只是 live 维度的"配对码"：Redis `ktv_room_<roomId>` 带空闲 TTL（默认 `1 day`，活跃房间每次写入自动续期），过期即大厅关闭，房号可被复用。
+- 每个房间创建时生成一个 `uuid`（随歌单数据保存），作为**存档维度**的持久身份；后端每次写透同步 upsert 到 SQLite（`ROOM_ARCHIVE_DB_PATH`，默认 `/app/data/rooms.db`，挂载在 `ktv_room_archive` volume，`--force-recreate` 不会丢失）。
+- 只读接口：`GET /api/roomArchive?uuid=...` 按 uuid 读回该房间当时的 `roomId` 与歌单数据；不存在返回 404。该接口不写 Redis、不影响 live 房间。
+- 存量房间没有 uuid，不参与存档、不迁移。
+- 房间页在房间号下方显示 UUID；成功载入房间后自动将 UUID 保存到当前浏览器的 `localStorage.ktv_room_history`，同一 UUID 不重复记录。
+- 首页下方的「历史房间记录」进入 `/history`，以房间列表为主，点击房间即可查看历史歌单。「导入 / 导出」按钮进入独立页面 `/history/transfer`，支持按 UUID 批量导入，以及勾选后通过「导出到文件」下载文本文件，或通过「导出到剪贴板」直接复制（均为每行一个 UUID，可再次粘贴导入）。导入会验证存档存在，失败项保留供重试。记录只存在当前浏览器，清理浏览器数据会移除本机列表，SQLite 存档不受影响。
+- `/history/:uuid` 只读展示正在唱、待唱和已唱列表；通过刷新获取最新存档。接口同时返回 `createdAt`、`updatedAt` 和 `active`，其中 `active` 必须匹配 Redis 当前房间的 UUID，房间号复用不会让旧存档显示为活跃。
+- 活跃存档可直接进入房间，进入前通过 `/api/roomExists?roomId=...&uuid=...` 再次校验身份。历史查看不会给 Redis 房间续期或恢复已关闭的房间。
+- 后端存档与切歌测试使用内存 SQLite 和隔离的存储替身，不依赖运行中的 Redis；SQLite 重启持久化测试使用独立临时目录，不写入现有 `rooms.db`。
+
 #### 默认配置
 
 ```yaml
@@ -271,6 +286,8 @@ ktv-web-backend:
         - SEARCH_CATALOG_EXPIRE_TIME=14d
         # 图片代理缓存过期时间 默认 1 day
         - IMAGE_CACHE_EXPIRE_TIME=24h
+        # 房间存档 SQLite 文件路径 默认 <运行目录>/data/rooms.db（Docker 下即 /app/data/rooms.db）
+        - ROOM_ARCHIVE_DB_PATH=/app/data/rooms.db
 ktv-web-frontend:
     # ......
     environment:

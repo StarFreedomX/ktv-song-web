@@ -918,15 +918,17 @@ const songListTools = {
             sung: storageSongLists.sung || [],
             createdAt: storageSongLists.createdAt,
             updatedAt: storageSongLists.updatedAt,
+            uuid: storageSongLists.uuid,
         }
     },
     // 不能使用常量，因为对象是地址传递
-    getEmptySongLists: (): SongLists => ({
+    getEmptySongLists: (uuid?: string): SongLists => ({
         queued: [],
         singing: null,
         sung: [],
         createdAt: Date.now(),
-        updatedAt: Date.now()
+        updatedAt: Date.now(),
+        ...(uuid ? { uuid } : {})
     })
 }
 

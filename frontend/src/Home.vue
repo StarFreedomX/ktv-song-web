@@ -57,6 +57,7 @@
             </div>
 
             <div class="mt-8 flex flex-col items-center gap-4">
+                <RouterLink to="/history" class="text-sm font-bold text-slate-500 hover:text-[#FE3C71] transition-colors">历史房间记录 →</RouterLink>
                 <div class="flex items-center gap-4">
                     <a
                         href="https://github.com/starfreedomx/ktv-song-web"
