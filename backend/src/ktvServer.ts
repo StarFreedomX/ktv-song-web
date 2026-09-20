@@ -7,7 +7,7 @@ import Koa from "koa";
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
-import { Storage } from "@/storage";
+import { Storage, StorageUnavailableError } from "@/storage";
 import { ArchiveStore } from "@/archiveStore";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
@@ -45,6 +45,18 @@ function parseDurationMs(value: string | undefined, fallback: number) {
 export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const app = websockify(new Koa());
     const router = new Router();
+    app.use(async (ctx, next) => {
+        try {
+            await next();
+        } catch (error) {
+            if (!(error instanceof StorageUnavailableError)) throw error;
+            ktvLogger.error('[Redis unavailable]', ctx.method, ctx.path,
+                error.cause instanceof Error ? error.cause.message : error.message);
+            ctx.status = 503;
+            ctx.set('Retry-After', '5');
+            ctx.body = { success: false, code: 'REDIS_UNAVAILABLE', msg: error.message };
+        }
+    });
     app.use(bodyParser());
 
     const DEFAULT_CACHE_DATA_EXPIRE_TIME = 24 * 60 * 60 * 1000;
@@ -158,6 +170,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     // 统一房间存在性校验：缓存命中直接返回；缓存未命中查 Redis；Redis 也没有 → null（调用方拒绝）
     const ensureRoom = async (roomId: string): Promise<SongLists | null> => {
+        storage.assertReady();
         if (roomSongsCache[roomId]) return roomSongsCache[roomId];
         const lists = await songListTools.initSongLists(storage, roomId);
         if (lists === null) return null;
@@ -247,7 +260,14 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: false, msg: '存档不存在' };
             return;
         }
-        const live = await storage.get<SongLists>(DATABASE_NAME, archive.roomId);
+        let active: boolean | null = null;
+        try {
+            const live = await storage.get<SongLists>(DATABASE_NAME, archive.roomId);
+            active = live?.uuid === archive.uuid;
+        } catch (error) {
+            if (!(error instanceof StorageUnavailableError)) throw error;
+            ktvLogger.warn('[RoomArchive]', 'Redis unavailable; live status unknown');
+        }
         koaCtx.body = {
             success: true,
             uuid: archive.uuid,
@@ -255,7 +275,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             songLists: archive.songLists,
             createdAt: archive.createdAt,
             updatedAt: archive.updatedAt,
-            active: live?.uuid === archive.uuid
+            active
         };
     });
 
@@ -411,6 +431,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: true, hash: finalHash };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -523,6 +544,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: true, hash: finalHash, song: prevSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -605,6 +627,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: true, hash: finalHash, song: targetSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -693,6 +716,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
                 items: attachProxyImage(sortedItems)
             };
         } catch (error) {
+            if (error instanceof StorageUnavailableError) throw error;
             ktvLogger.error('Bilibili search failed', error);
             koaCtx.status = 500;
             koaCtx.body = {
@@ -903,6 +927,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: true, hash: finalHash, song };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.error("Operation re-run failed:", e);
             koaCtx.body = { success: false, code: 'REJECT' };
             ktvLogger.debug('REJECT')

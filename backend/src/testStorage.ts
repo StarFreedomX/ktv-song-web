@@ -5,6 +5,7 @@ export function createTestStorage() {
     const values = new Map<string, unknown>();
     const keyOf = (namespace: string, key: string) => `${namespace}_${key}`;
     const storage = {
+        assertReady: jest.fn(),
         get: jest.fn(async (namespace: string, key: string) => structuredClone(values.get(keyOf(namespace, key)))),
         set: jest.fn(async (namespace: string, key: string, value: unknown) => {
             values.set(keyOf(namespace, key), structuredClone(value));

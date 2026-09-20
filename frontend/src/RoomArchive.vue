@@ -44,8 +44,8 @@ async function join() {
     try {
         const { roomId, uuid } = archive.value;
         const res = await fetch(`/api/roomExists?roomId=${encodeURIComponent(roomId)}&uuid=${encodeURIComponent(uuid)}`);
-        if (!res.ok) throw new Error('无法连接服务器，请重试');
         const data = await res.json();
+        if (!res.ok) throw new Error(data.msg || '服务暂不可用，请稍后重试');
         if (!data.exists) {
             archive.value.active = false;
             throw new Error('该房间已关闭，仍可查看历史歌单');
@@ -83,7 +83,7 @@ async function join() {
                         <span v-show="loading" aria-hidden="true" class="archive-skeleton absolute inset-0 rounded"></span>
                     </span>
                 </ComfirmButton>
-                <span v-if="archive" class="text-sm text-slate-500">{{ archive.active ? '房间仍在活跃中' : '房间已关闭' }}</span>
+                <span v-if="archive" class="text-sm text-slate-500">{{ archive.active === null ? '暂时无法确认房间状态，请稍后刷新' : archive.active ? '房间仍在活跃中' : '房间已关闭' }}</span>
             </div>
             <div v-if="initialLoading" aria-hidden="true">
                 <div class="mt-4 space-y-2">

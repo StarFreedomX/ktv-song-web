@@ -93,6 +93,7 @@ const showSettings = ref(false);
 const showAddModal = ref(false);
 const showBiliSearchModal = ref(false);
 const roomNotFound = ref(false);
+const serviceError = ref('');
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -769,6 +770,11 @@ const load = async () => {
         }
         const data = await res.json();
 
+        if (!res.ok) {
+            serviceError.value = data.msg || '服务暂不可用，请稍后重试';
+            throw new Error(serviceError.value);
+        }
+        serviceError.value = '';
         const loadedUuid = data.list?.uuid || data.uuid || '';
         if (roomUuid.value !== loadedUuid) {
             roomUuid.value = loadedUuid;
@@ -854,6 +860,7 @@ const load = async () => {
         }
     } catch (e) {
         console.error("Load Error:", e);
+        throw e;
     }
 };
 
@@ -1032,8 +1039,11 @@ watch(() => cfg.value.wsMode, (isWS) => {
 onMounted(async () => {
     // 房间存在性校验：不存在则进入“房间不存在”全屏状态
     try {
-        const res = await fetch(`api/roomExists?roomId=${encodeURIComponent(roomId.value ?? '')}`).then(r => r.json());
-        if (!res.exists) {
+        const response = await fetch(`api/roomExists?roomId=${encodeURIComponent(roomId.value ?? '')}`);
+        const res = await response.json();
+        if (!response.ok) {
+            serviceError.value = res.msg || '服务暂不可用，请稍后重试';
+        } else if (res.exists === false) {
             roomNotFound.value = true;
             return;
         }
@@ -1063,6 +1073,7 @@ onUnmounted(() => {
 
 <template>
     <div class="brand-theme">
+    <p v-if="serviceError" role="alert" class="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{{ serviceError }}</p>
 
     <div v-if="roomNotFound" class="room-not-found-overlay">
         <div class="room-not-found-card">
