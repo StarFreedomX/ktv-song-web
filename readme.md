@@ -1,101 +1,64 @@
-# ktv-song-web
+# KTV Song List Web
 
-**KTV Song List Web**
+一个方便多人一起点歌的网页应用。创建房间后，把链接分享给朋友，即可一起添加歌曲、管理待唱顺序，并同步查看正在唱、待唱和已唱的歌曲。
 
-前端支持自动解析 B 站分享字符串，并支持在「添加歌曲」里直接搜索 B 站 KTV 视频一键点歌。
+支持解析 B 站分享内容，也可以直接搜索 B 站 KTV 视频点歌。
 
-## B站搜索 + Redis缓存
+## 开始使用
 
-- 前端：`添加新歌曲` 弹窗内输入关键词，调用后端 `/api/bilibiliSearch` 获取候选；选择后会调用 `/api/bilibiliSearch/select` 记录点击热度用于排序。
-- 伴奏提示：后端会保留 B 站搜索接口返回的原始 `tag`，并结合现有标题标签、视频标题、分P标题做“仅伴奏 / off vocal”识别；当前分P优先级最高，标题里明确含 `on vocal` 时会压过 `off vocal` 提示。前端默认会在点歌前弹出确认提示，用户也可以在设置里关闭；搜索弹窗里双击标题可直接打开 B 站确认。
-- 后端：会对搜索结果做两层缓存
-  - `bilibili_search_cache`：按关键词缓存搜索结果（默认 1 天）
-  - `bilibili_search_catalog`：全局搜索目录（默认 14 天），用于做“局部匹配 + 热度排序”
-- Redis：用于缓存歌曲列表、搜索结果、点击热度等。后端优先使用 Redis TTL（无需额外的“expireAt”逻辑）。
+1. 打开网站，在首页选择「创建房间」，输入房间号。
+2. 将房间链接分享给朋友；朋友也可以选择「加入房间」，输入相同房间号。
+3. 进入房间后，打开「添加新歌曲」，搜索或粘贴 B 站分享内容来点歌。
+4. 在房间中查看歌单、调整待唱顺序，并在唱完后切换到下一首。
 
-### 缓存作用域说明
+已被使用的房间号不能重复创建，可以换一个房间号，或加入已有房间。
 
-- **房间级缓存**：歌曲列表缓存是按 `roomId` 隔离的，每个房间都有自己的 `ktv_room_<roomId>` 数据；一个房间的点歌、切歌、打乱不会影响另一个房间。
-- **全局缓存**：B站搜索结果、搜索目录、点击热度都不按房间区分，所有房间共享同一份缓存数据，所以大家搜过的歌会一起提升命中率和排序效果。
-- **内存缓存补充**：后端进程里还有一层按 `roomId` 分隔的内存缓存，用来减少 Redis 读取和重复计算，但最终持久化还是落在 Redis。
+如果分享链接提示「房间不存在或已失效」，请返回首页重新创建或加入房间。房间默认在停止更新歌单约 24 小时后失效，具体时长由部署者设置；查看历史记录不会延长房间有效期。
 
-### TTL 和配置位置
+## B 站点歌
 
-- **房间级歌曲列表 TTL**：默认 `1 day`，对应 `CACHE_DATA_EXPIRE_TIME`。写入时由后端传给 Redis，代码位置在 `backend/src/ktvServer.ts`，真正写 Redis 的逻辑在 `backend/src/storage.ts`，会用 `PX` 方式设置过期时间。
-- **房间级操作日志 TTL（内存）**：默认 `5 min`，对应 `CACHE_OP_EXPIRE_TIME`。它不是 Redis 缓存，而是进程内的 `roomOpCache`，通过定时清理控制失效。
-- **全局搜索结果 TTL**：默认 `1 day`，对应 `SEARCH_CACHE_EXPIRE_TIME`。关键词搜索结果按归一化后的关键词存入 Redis，设置位置在 `/api/bilibiliSearch` 里。
-- **全局搜索目录 TTL**：默认 `14 days`，对应 `SEARCH_CATALOG_EXPIRE_TIME`。搜索目录是全局共用的，设置位置在 `saveSearchCatalog()`。
-- **全局点击热度 TTL**：默认 `365 days`，设置在 `/api/bilibiliSearch/select` 里。它用于给 B 站搜索结果排序，不按房间区分。
+在「添加新歌曲」中输入歌名或关键词，即可查看候选视频并选择加入歌单，也可以粘贴 B 站分享内容让应用自动解析。
 
-这些 TTL 的默认值都在 `backend/src/ktvServer.ts` 顶部定义，运行时会优先读取环境变量；Docker 开发调试时可以在 `docker-compose.yml` 里直接改对应的 `environment`。
-当前支持的时间格式包括：`ms`、`s`、`m`、`h`、`d`，例如 `5m`、`1h`、`24h`、`1d` 都可以直接写。
+- 搜索结果会利用已有搜索记录和点选热度帮助排序，所有房间共享这些搜索信息。
+- 应用会根据视频标签、标题和分 P 标题识别伴奏版本，点歌前默认弹出确认提示，可在设置中关闭。
+- 如需确认视频内容，可以在搜索弹窗中双击标题打开 B 站查看。
 
-### normalize 是怎么做的
+伴奏提示仅供参考，实际是否包含人声请以视频内容为准。
 
-搜索时会先把关键词做 `normalizeSearchText`，规则很简单：
+## 历史房间记录
 
-- 全部转成小写
-- 去掉空格和大部分标点符号
-- 去掉中英文括号、书名号、引号等包裹字符
-- 保留中文、日文、英文和数字本身
+成功进入房间后，应用会在当前浏览器中记住该房间。通过首页的「历史房间记录」，可以查看过去房间的正在唱、待唱和已唱歌单。
 
-这套规则会同时用于：
+- 历史歌单为只读；房间仍然活跃时，可以从历史记录进入房间继续使用。
+- 房间关闭后，仍可查看已有存档。同一个房间号以后再次使用，也不会覆盖旧房间的存档。
+- 在「导入 / 导出」中，可以勾选记录导出为文本文件或复制到剪贴板，再到其他浏览器粘贴导入。
+- 导入内容为每行一个房间 UUID（房间页显示的唯一标识），支持批量导入；导入失败的项目会保留供重试。
 
-- 搜索缓存 key
-- 搜索目录匹配
-- 标题、标签、分P名字的局部匹配
+清理浏览器数据会移除本机的历史列表，但不会删除服务器上的存档。建议提前导出需要保留的记录；较早版本创建、没有 UUID 的房间不提供存档。
 
-举个例子，歌曲标题里如果出现：
+## 投屏
 
-`カラオケ字幕】【纯k投屏自用】StarDivine`
+### 使用 ktv-casting-android-app
 
-归一化后会变成：
+可搭配 [ktv-casting 投屏后端](https://github.com/aspromise/ktv-casting) 使用。它会跟随当前正在唱的歌曲，并支持歌曲结束后自动切换下一首。
 
-`カラオケ字幕纯k投屏自用stardivine`
+支持 DLNA / 小电视 投屏
 
-所以用户输入像 `Star Divine`、`star-divine`、`【纯k投屏自用】StarDivine` 这类写法时，后端会尽量把它们当成同一类搜索意图来处理，提高命中率。
+### 使用云视听小电视(旧)
 
-### 图片缓存和代理
+在设备上开启「主机模式（HostMode）」和「App 跳转」，应用会跟随当前正在唱的歌曲，在歌曲更改时自动打开 B 站。
 
-- **默认行为**：搜索结果默认返回 B 站 CDN 原始封面链接（`pic`），前端会优先直接加载这个地址，并使用 `referrerpolicy="no-referrer"`。
-- **代理何时启用**：只有在启用 `ENABLE_BILIBILI_IMAGE_PROXY` 时，后端才会额外提供代理地址（`picProxy`，格式为 `/api/bilibiliImage?url=...`）。
-- **前端回退逻辑**：前端默认先加载 `pic`；如果直连加载失败，才会回退到 `picProxy`（前提是后端已提供该字段）。
-- **安全限制**：`/api/bilibiliImage` 只允许代理 `hdslb.com` 域名，防止任意外链图片被当成代理源。
-- **图片缓存**：对于通过 `/api/bilibiliImage` 拉取的图片，后端会缓存在内存里的 `imageCache`，默认 TTL 是 `1 day`，对应 `IMAGE_CACHE_EXPIRE_TIME`。
-- **浏览器缓存**：`/api/bilibiliImage` 响应还会设置 `Cache-Control: public, max-age=86400`，让浏览器也能复用这张图，减少重复请求。
-- **配置位置**：图片缓存 TTL 的默认值在 `backend/src/ktvServer.ts` 顶部，Docker 环境可以在 `docker-compose.yml` 里通过 `IMAGE_CACHE_EXPIRE_TIME` 调整；是否给搜索结果附带 `picProxy` 则取决于 `ENABLE_BILIBILI_IMAGE_PROXY`。
+在 B 站主页连接投屏设备后，即可配合自动播放和投屏。使用这种方式通常需要设备开启分屏模式。
 
-## 投屏功能
+## 自行部署
 
-1. 利用云视听小电视投屏
+如果已经有可用的网站地址，直接打开即可，无需安装。以下步骤适用于希望自行搭建服务的使用者。
 
-    通常需要设备开启分屏模式
+可以使用 Docker 镜像部署，也可以通过 pnpm 从源码构建并运行。
 
-    通过开启**主机模式(`HostMode`)**及**App跳转**，客户端会自动追踪当前在唱歌曲
+### 方式一：使用预构建镜像
 
-    检测到歌曲更改后会自动打开bilibili
-
-    若同时在**bilibili主页**中连接了投屏设备
-
-    则会自动播放并投屏bilibili视频
-
-2. 利用投屏后端使用DLNA协议投屏
-
-    投屏后端详见[ktv-casting](https://github.com/aspromise/ktv-casting)
-
-    投屏后端将追踪当前在唱歌曲，并且可以歌曲结束自动切换下一首
-
-## 启动方式
-
-### 使用 Docker Compose 启动
-
-如果你安装了 Docker 和 Docker Compose
-
-可以使用docker直接启动
-
-首先在创建一个目录，并创建`docker-compose.yml`
-
-将下面的yml复制进`docker-compose.yml`中
+安装 Docker 和 Docker Compose 后，新建一个目录，在其中创建 `docker-compose.yml`，填入以下内容：
 
 ```yml
 # docker-compose.yml
@@ -134,219 +97,70 @@ volumes:
     ktv_room_archive:
 ```
 
-启动
+在该目录中运行：
 
 ```shell
 docker compose up -d
-# 如果使用旧版docker compose (v1),则使用docker-compose up -d
 ```
 
-如果你没有 `ghcr.io/starfreedomx` 的拉取权限，建议直接用下面这种方式部署：
+启动后，在浏览器打开 [http://localhost:5526/](http://localhost:5526/)，即可创建或加入房间。其他设备访问时，将 `localhost` 换成服务器的 IP 或域名，并确保可以访问对应端口。
+
+上面的配置会持久保存房间存档和歌单数据。更新或重建容器不会删除这些数据，但删除数据卷会导致数据丢失；房间本身仍有有效期。
+
+#### 更新镜像
+
+在部署目录中运行：
 
 ```shell
-docker compose up -d --build --pull never
-```
-
-这样 `backend` / `frontend` 会优先走本地 `Dockerfile` 构建，不会依赖原作者发布到 GHCR 的成品镜像；第一次构建时如果本地没有基础镜像，Docker 仍可能拉取像 `node`、`redis` 这类公共基础镜像。
-
-### 服务器部署建议：不要在服务器构建
-
-如果服务器在 `pnpm build` 或 `docker compose build` 时容易因为磁盘 IO 卡死，建议把部署流程改成：
-
-- GitHub Actions 负责构建并推送 `backend` / `frontend` 镜像到 `GHCR`
-- 服务器只做 `git pull`、`docker compose pull`、`docker compose up -d`
-- 不要在服务器执行 `pnpm build`
-- 不要在服务器执行 `docker compose up --build`
-
-推荐服务器部署步骤：
-
-```shell
-cd ~/ktv-song-web
-
-git fetch --all
-git checkout master
-git pull --ff-only
-
 docker compose pull
 docker compose up -d --force-recreate --remove-orphans
 ```
 
-如果服务器的端口映射和仓库默认值不同，不要直接改受 Git 管理的 `docker-compose.yml`，建议在服务器本机额外放一个 `docker-compose.override.yml`，只覆盖端口：
+### 方式二：源码部署
 
-```yaml
-services:
-  ktv-web-backend:
-    ports:
-      - "旧后端端口:5823"
-
-  ktv-web-frontend:
-    ports:
-      - "旧前端端口:5526"
-```
-
-这样以后服务器执行 `git pull --ff-only` 时，不会因为端口改动和仓库内容冲突。
-
-### GitHub Actions 镜像发布说明
-
-仓库内的 `.github/workflows/docker-release.yml` 现在会：
-
-- 在 `master` 分支推送时自动构建并推送镜像
-- 在打 `v*` tag 时自动构建并推送版本镜像
-- 推送到 `GHCR`
-
-镜像标签规则：
-
-- `master` 分支：推送分支标签，并更新 `latest`
-- `v*` tag：推送语义化版本标签，例如 `0.4.1`
-
-服务器通常直接拉：
-
-- `ghcr.io/<owner>/ktv-song-web-backend:latest`
-- `ghcr.io/<owner>/ktv-song-web-frontend:latest`
-
-如果仓库是私有的，还需要让服务器先登录 GHCR：
+准备 Git、Node.js（22 或 24，使用对应版本的最新补丁）和 Redis，并启动 Redis。安装项目指定版本的 pnpm：
 
 ```shell
-echo <GHCR_TOKEN> | docker login ghcr.io -u <GITHUB_USERNAME> --password-stdin
+npm install -g pnpm@11.20.0
 ```
 
-其中 `<GHCR_TOKEN>` 需要至少具备读取包的权限。
-
-### 使用 Docker Compose 开发调试（不在宿主机安装依赖）
-
-项目的 `backend/Dockerfile` 与 `frontend/Dockerfile` 会在镜像构建阶段安装依赖并打包，因此你可以直接用 Docker 进行调试与验证，而无需在宿主机执行 `npm install` / `pnpm install` 产生 `node_modules`。
-
-```shell
-# 构建并启动（会重新 build 两个镜像）
-docker compose up -d --build --force-recreate --remove-orphans
-
-# 查看日志
-docker compose logs -f ktv-web-backend
-docker compose logs -f ktv-web-frontend
-```
-
-访问：`http://localhost:5526/`（首页创建或加入房间；房间需要先创建，创建成功后即可分享链接，如 `http://localhost:5526/?roomId=demo`）
-
-如果你想直接调后端接口，可以先用 POST 创建演示房间：
-
-```shell
-curl -X POST "http://localhost:5823/api/createRoom?roomId=demo"
-```
-
-然后再访问：`http://localhost:5823/api/songListInfo?roomId=demo`
-
-> 注意：`/api/songListInfo` 对**不存在的房间**会返回 `404`（`{"success":false,"msg":"房间不存在"}`），不再像以前那样"进空房间自动建房"。这样可以避免两拨人使用同一个房间号导致串房。
-
-#### 房间创建 / 加入逻辑
-
-- 首页提供**创建房间**和**加入房间**两个入口，输入同一个房间号时行为完全不同：
-  - **创建房间**：`POST /api/createRoom?roomId=X`，房间已存在时返回 `{"success":false,"msg":"房间已存在"}`；不存在则原子创建并返回 `{"success":true,"roomId":X}`。
-  - **加入房间**：`GET /api/roomExists?roomId=X` 校验房间存在（`{"exists":true|false}`）后再进入；不存在会提示"房间不存在，请先创建房间"。
-- 后端通过 Redis `SET NX` 原子创建房间，两拨人同时抢同一个房间号时只有一方能成功。
-- 直连分享链接访问不存在的房间时，前端会显示"房间不存在或已失效"并引导返回首页，不会自动建房。
-- 房间创建时写入空的 `ktv_room_<roomId>` 数据，TTL 与歌曲列表一致（默认 `1 day`，对应 `CACHE_DATA_EXPIRE_TIME`）。
-
-#### 房间存档（历史只读数据）
-
-- 房间号只是 live 维度的"配对码"：Redis `ktv_room_<roomId>` 带空闲 TTL（默认 `1 day`，活跃房间每次写入自动续期），过期即大厅关闭，房号可被复用。
-- 每个房间创建时生成一个 `uuid`（随歌单数据保存），作为**存档维度**的持久身份；后端每次写透同步 upsert 到 SQLite（`ROOM_ARCHIVE_DB_PATH`，默认 `/app/data/rooms.db`，挂载在 `ktv_room_archive` volume，`--force-recreate` 不会丢失）。
-- 只读接口：`GET /api/roomArchive?uuid=...` 按 uuid 读回该房间当时的 `roomId` 与歌单数据；不存在返回 404。该接口不写 Redis、不影响 live 房间。
-- 存量房间没有 uuid，不参与存档、不迁移。
-- 房间页在房间号下方显示 UUID；成功载入房间后自动将 UUID 保存到当前浏览器的 `localStorage.ktv_room_history`，同一 UUID 不重复记录。
-- 首页下方的「历史房间记录」进入 `/history`，以房间列表为主，点击房间即可查看历史歌单。「导入 / 导出」按钮进入独立页面 `/history/transfer`，支持按 UUID 批量导入，以及勾选后通过「导出到文件」下载文本文件，或通过「导出到剪贴板」直接复制（均为每行一个 UUID，可再次粘贴导入）。导入会验证存档存在，失败项保留供重试。记录只存在当前浏览器，清理浏览器数据会移除本机列表，SQLite 存档不受影响。
-- `/history/:uuid` 只读展示正在唱、待唱和已唱列表；通过刷新获取最新存档。接口同时返回 `createdAt`、`updatedAt` 和 `active`，其中 `active` 必须匹配 Redis 当前房间的 UUID，房间号复用不会让旧存档显示为活跃。
-- 活跃存档可直接进入房间，进入前通过 `/api/roomExists?roomId=...&uuid=...` 再次校验身份。历史查看不会给 Redis 房间续期或恢复已关闭的房间。
-- 后端存档与切歌测试使用内存 SQLite 和隔离的存储替身，不依赖运行中的 Redis；SQLite 重启持久化测试使用独立临时目录，不写入现有 `rooms.db`。
-
-#### 默认配置
-
-```yaml
-ktv-web-backend:
-    # ......
-    environment:
-        # 监听端口
-        - PORT=5823
-        # 监听HOST
-        # Docker环境默认值为0.0.0.0
-        # 其他环境默认值为localhost
-        - HOST=0.0.0.0
-        # 日志模式 详细程度: error < warn < info < debug < trace
-        - DEBUG_MODE=info
-        # REDIS数据库地址
-        # Docker环境默认值为redis://redis:6379
-        # 其他环境默认值为redis://localhost:6379
-        - REDIS_URL=redis://redis:6379
-        # 数据库歌曲缓存过期时间 默认 1 day
-        - CACHE_DATA_EXPIRE_TIME=24h
-        # 内存中歌曲操作过期时间 默认 5 min
-        - CACHE_OP_EXPIRE_TIME=5m
-        # B站搜索缓存（关键词）过期时间 默认 1 day
-        - SEARCH_CACHE_EXPIRE_TIME=24h
-        # B站搜索目录缓存过期时间 默认 14 day
-        - SEARCH_CATALOG_EXPIRE_TIME=14d
-        # 图片代理缓存过期时间 默认 1 day
-        - IMAGE_CACHE_EXPIRE_TIME=24h
-        # 房间存档 SQLite 文件路径 默认 <运行目录>/data/rooms.db（Docker 下即 /app/data/rooms.db）
-        - ROOM_ARCHIVE_DB_PATH=/app/data/rooms.db
-ktv-web-frontend:
-    # ......
-    environment:
-        # 后端地址
-        # Docker环境默认值为http://ktv-web-backend:5823
-        # 其他环境默认值为http://localhost:5823
-        - BACKEND_URL=http://ktv-web-backend:5823
-```
-
-### GitHub Release包启动
-
-1. 前往[Release](https://github.com/StarFreedomX/ktv-song-web/releases)页面下载构建好的包
-2. 解压，进入解压后的目录
-3. 执行`pnpm install --prod`
-    > 可以使用`--frozen-lockfile`来锁定依赖版本
-4. 运行`pnpm start`
-
-### 本地构建启动
+下载源码并构建：
 
 ```shell
 git clone https://github.com/StarFreedomX/ktv-song-web.git
-
 cd ktv-song-web
-
-# 如果没有安装pnpm，运行下面这行
-# npm install -g pnpm
-
-pnpm install # 可以使用`--frozen-lockfile`来锁定依赖版本
-
+pnpm install --frozen-lockfile
 pnpm build
+```
 
-# 清理开发依赖
-pnpm i --prod
+如果使用的是其他分支或派生仓库，请将仓库地址替换为实际使用的地址，并切换到要部署的分支。
 
-# 接下来可以进入frontend backend文件夹
-# 复制一份 .env 到 .env.local
-# 然后在 .env.local 中修改你想修改的配置
+默认连接本机 Redis（`redis://localhost:6379`）。需要修改配置时，将 `backend/.env` 和 `frontend/.env` 分别复制为同目录下的 `.env.local`，再编辑对应配置：
 
-# 启动
+- `backend/.env.local`：通过 `REDIS_URL` 设置 Redis 地址。
+- `frontend/.env.local`：其他设备需要访问时，将 `HOST` 设为 `0.0.0.0`；`BACKEND_URL` 默认是 `http://localhost:5823`。
+
+在仓库根目录启动前后端：
+
+```shell
 pnpm start
 ```
 
-默认环境见上方 [默认配置](#默认配置)
+启动后打开 [http://localhost:5526/](http://localhost:5526/)。其他设备访问时，将 `localhost` 换成服务器的 IP 或域名。
 
-### 开发模式启动
+#### 更新
+
+停止正在运行的服务后，在原来的仓库目录中运行：
 
 ```shell
-git clone https://github.com/StarFreedomX/ktv-song-web.git
-cd ktv-song-web
-pnpm install # 可以使用`--frozen-lockfile`来锁定依赖版本
-pnpm dev
+git pull --ff-only
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start
 ```
 
-默认环境见上方 [默认配置](#默认配置)
+保留 `.env.local`、Redis 数据及房间存档文件（默认 `backend/data/rooms.db`）。更多配置项见 [默认配置](develop.md#默认配置)。
 
-### 单独启动
+## 开发与高级配置
 
-本项目支持单独启动前端和后端
-
-相关启动方式可以参考对应文件夹的`package.json`文件
-
-应用将运行在 `http://localhost:5823`。
+接口说明、缓存机制、环境变量、开发调试和镜像发布流程见 [develop.md](develop.md)。
