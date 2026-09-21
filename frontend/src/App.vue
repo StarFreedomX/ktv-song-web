@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { initUtils } from "./utils";
+import { initUtils, createUUId } from "./utils";
 import { useRoute } from 'vue-router';
 import ShuffleConfirmModal from "./modals/ShuffleConfirmModal.vue";
 import SettingsModal from "./modals/SettingsModal.vue";
@@ -71,6 +71,7 @@ const cfg = ref({
 // api接口
 const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
+const addSongUrl = "api/addSong"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
 const prevSongUrl = "api/prevSong"
@@ -121,6 +122,9 @@ const expandedBvid = ref(null);
 const isRefreshing = ref(false);
 const updateStatus = ref(UpdateStatus.IDLE);
 const allowUpdate = computed(() => !isDragging.value && !isRefreshing.value);
+
+let addAttempt = null;
+let songStateVersion = 0;
 
 // 工具函数
 const {
@@ -215,6 +219,12 @@ watch(showAddModal, (visible) => {
         isAddingToFavorites.value = false;
     }
 });
+
+// 关闭/重开窗口或修改输入后，即使又改回原内容，也属于新的一次提交。
+watch([
+    showAddModal, showBiliSearchModal, roomId,
+    () => form.value.title, () => form.value.url, () => cfg.value.nickname
+], () => { addAttempt = null; }, { flush: 'sync' });
 
 // 监听正在播放歌曲的变化
 watch(() => singing.value, (newSong, oldSong) => {
@@ -437,32 +447,77 @@ const add = async () => {
     });
 }
 
+const applyAddedSong = async (data, attempt, expectedVersion) => {
+    if (!data.success || !data.hash || !data.song || data.song.id !== attempt.song.id ||
+        updateInFlight || !allowUpdate.value || syncDisposed || roomId.value !== attempt.roomId ||
+        songStateVersion !== expectedVersion) return false;
+    const snapshot = JSON.stringify({ queued: queued.value, singing: singing.value, sung: sung.value });
+    const lists = JSON.parse(snapshot);
+    const alreadyExists = [...lists.queued, ...lists.sung, lists.singing]
+        .some(song => song?.id === data.song.id);
+    if (!alreadyExists) lists.queued.push(data.song);
+    const hash = await getHash(lists);
+    // Hash 计算期间可能收到推送或发生本地操作，只有快照仍有效时才能应用。
+    if (hash !== data.hash || updateInFlight || !allowUpdate.value || syncDisposed ||
+        roomId.value !== attempt.roomId || songStateVersion !== expectedVersion || snapshot !== JSON.stringify({
+            queued: queued.value, singing: singing.value, sung: sung.value
+        })) return false;
+    // 保留已有歌曲对象，让删除、移动、编辑和动画回调继续引用同一对象。
+    if (!alreadyExists) queued.value = [...queued.value, data.song];
+    lastHash.value = hash;
+    songStateVersion++;
+    return true;
+};
+
 const enqueueSong = async ({ title, url, onSuccess }) => {
-    let rawUrl = (url || '').trim();
+    const rawUrl = (url || '').trim();
     if (!title || !rawUrl) return false;
-
-    const newSong = {
-        id: 's-' + Math.random().toString(36).slice(2, 11),
-        title,
-        url: rawUrl,
-        addedBy: cfg.value.nickname
-    };
-
-    // 按当前歌单提交到队尾；新增歌曲由服务端同步结果显示。
-    const success = await commitOp({
-        song: newSong, toIndex: queued.value.length
-    });
-    if (!success) {
-        // 保留输入，并同步确认服务端状态。
-        requestSync();
+    const content = { title, url: rawUrl, addedBy: cfg.value.nickname };
+    const key = JSON.stringify([roomId.value, content]);
+    if (!addAttempt || addAttempt.key !== key) {
+        addAttempt = {
+            key,
+            roomId: roomId.value,
+            rid: createUUId(),
+            song: { id: createUUId(), ...content }
+        };
     }
-    else {
-        if (typeof onSuccess === 'function') {
-            await onSuccess();
+    const attempt = addAttempt;
+    const expectedVersion = songStateVersion;
+    try {
+        const response = await fetch(`${addSongUrl}?roomId=${encodeURIComponent(attempt.roomId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'request-id': attempt.rid },
+            body: JSON.stringify({ song: attempt.song })
+        });
+        let applied = false;
+        let data;
+        try {
+            data = await response.json();
+            if (response.ok) applied = await applyAddedSong(data, attempt, expectedVersion);
+        } finally {
+            // 包括 duplicated、业务拒绝及无法解析的响应，均校验当前歌单。
+            if (!applied && !syncDisposed) requestSync();
         }
-        resetAddSongState();
+        if (!response.ok || !data.success) {
+            if (addAttempt === attempt && data.msg) showToast(data.msg);
+            return false;
+        }
+        // 响应可以乱序到达，但旧请求不能清空新窗口/新输入。
+        if (addAttempt === attempt && !syncDisposed) {
+            if (typeof onSuccess === 'function') await onSuccess();
+            if (addAttempt === attempt && !syncDisposed) {
+                addAttempt = null;
+                showBiliSearchModal.value = false;
+                resetAddSongState();
+            }
+        }
+        return true;
+    } catch (e) {
+        console.error('Add Song Error:', e);
+        if (addAttempt === attempt && !syncDisposed) showToast('添加结果未确认，请重试');
+        return false;
     }
-    return success;
 };
 
 const resetAddSongState = () => {
@@ -600,7 +655,6 @@ const addBilibiliSearchResult = async (item) => {
         url: getBilibiliSongUrl(item.bvid, part?.page || 1),
         onSuccess: async () => {
             await trackBilibiliSelection(item);
-            showBiliSearchModal.value = false;
         }
     });
 };
@@ -612,7 +666,6 @@ const addBilibiliPart = async ({ item, part }) => {
         url: getBilibiliSongUrl(item.bvid, part.page),
         onSuccess: async () => {
             await trackBilibiliSelection(item);
-            showBiliSearchModal.value = false;
         }
     });
 };
@@ -791,6 +844,7 @@ const load = async () => {
             throw new Error(serviceError.value);
         }
         serviceError.value = '';
+        songStateVersion++;
         const loadedUuid = data.list?.uuid || data.uuid || '';
         if (roomUuid.value !== loadedUuid) {
             roomUuid.value = loadedUuid;

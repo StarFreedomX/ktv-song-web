@@ -40,6 +40,10 @@ export interface Song {
     addedBy?: string
 }
 
+export interface AddSongBody {
+    song: Song;
+}
+
 export interface SongOperationBody {
     idArrayHash: string;
     song: Song;
