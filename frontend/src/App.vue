@@ -1022,7 +1022,26 @@ let socket = null;
 let pollingTimer = null;
 let reconnectTimer = null;
 let pingTimer = null;
+let pongTimer = null;
 let recoverySyncTimer = null;
+const WS_PING_INTERVAL = 20000;
+const WS_PONG_TIMEOUT = 10000;
+
+const clearHeartbeat = () => {
+    clearInterval(pingTimer);
+    clearTimeout(pongTimer);
+    pingTimer = null;
+    pongTimer = null;
+};
+
+const closeSocket = () => {
+    clearHeartbeat();
+    if (!socket) return;
+    const ws = socket;
+    socket = null;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+};
 
 // 合并 pageshow、visibilitychange、online 和连接成功的相邻通知。
 const requestRecoverySync = () => {
@@ -1045,14 +1064,9 @@ const stopSyncDrivers = () => {
     syncPending = false;
     clearTimeout(syncRetryTimer);
     syncRetryTimer = null;
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (pingTimer) clearTimeout(pingTimer);
-    if (socket) {
-        socket.onclose = null;
-        socket.close();
-        socket = null;
-        console.log("WebSocket disconnected")
-    }
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    closeSocket();
     if (pollingTimer) {
         clearInterval(pollingTimer);
         pollingTimer = null;
@@ -1062,24 +1076,55 @@ const stopSyncDrivers = () => {
 
 // WebSocket
 const initWebSocket = () => {
-    socket = new WebSocket(wsUrl);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (syncDisposed || roomNotFound.value || !cfg.value.wsMode) return;
+    closeSocket();
+    const ws = new WebSocket(wsUrl);
+    socket = ws;
+    const isCurrent = () => socket === ws && !syncDisposed && !roomNotFound.value && cfg.value.wsMode;
+    const reconnect = () => {
+        if (!isCurrent()) return;
+        closeSocket();
+        currentSync.value = SyncStatus.OFFLINE;
+        // 不等待失效连接的 close 事件，避免关闭握手阻塞重连。
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(initWebSocket, 3000);
+    };
     currentSync.value = SyncStatus.WS_CONNECTING;
     console.log("WebSocket connecting...");
 
-    socket.onopen = () => {
+    ws.onopen = () => {
+        if (!isCurrent()) return;
         currentSync.value = SyncStatus.WS_ONLINE;
         requestRecoverySync();
         console.log("WebSocket connected");
         pingTimer = setInterval(() => {
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: "ping" }));// 发送 ping
+            if (!isCurrent() || pongTimer !== null) return;
+            if (ws.readyState !== WebSocket.OPEN) return reconnect();
+            pongTimer = setTimeout(() => {
+                if (!isCurrent()) return;
+                console.warn('WS pong 超时，3秒后尝试重连...');
+                reconnect();
+            }, WS_PONG_TIMEOUT);
+            try {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (err) {
+                console.error('WS 心跳发送失败:', err);
+                reconnect();
             }
-        }, 20000); // 每 20 秒发送一次 ping
+        }, WS_PING_INTERVAL);
     };
 
-    socket.onmessage = async (event) => {
+    ws.onmessage = async (event) => {
+        if (!isCurrent()) return;
         try {
             const data = JSON.parse(event.data);
+            if (data.type === 'pong') {
+                clearTimeout(pongTimer);
+                pongTimer = null;
+                return;
+            }
             // 请求期间保留通知，即使 Hash 等于当前本地值，返回中的快照也可能不同。
             if (data.type === 'UPDATE' && (updateInFlight || data.hash !== lastHash.value)) {
                 requestSync();
@@ -1089,15 +1134,17 @@ const initWebSocket = () => {
         }
     };
 
-    socket.onclose = () => {
-        currentSync.value = SyncStatus.OFFLINE;
+    ws.onclose = () => {
+        if (!isCurrent()) return;
         console.warn('WS 连接已断开，3秒后尝试重连...');
-        reconnectTimer = setTimeout(initWebSocket, 3000);
+        reconnect();
     };
 
-    socket.onerror = (err) => {
+    ws.onerror = (err) => {
+        if (!isCurrent()) return;
         showTransientStatus(SyncStatus.FAILED);
         console.error('WS 发生错误:', err);
+        reconnect();
     };
 };
 
