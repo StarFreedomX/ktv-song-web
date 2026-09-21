@@ -368,6 +368,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (!currentQueue?.length) {
             // 队列为空：如果有正在唱的歌，把它放到已唱（避免重复）并清空 singing
             if (currentSongLists.singing) {
+                // 旧请求可能刚把最后一首切上来，不能再次用它结束这首歌
+                if (idArrayHash !== getHash(currentSongLists)) {
+                    return koaCtx.body = { success: false, code: 'REJECT' };
+                }
                 if (!currentSongLists.sung.length || currentSongLists.sung[currentSongLists.sung.length - 1].id !== currentSongLists.singing.id) {
                     currentSongLists.sung.push(currentSongLists.singing);
                 }
