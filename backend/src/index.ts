@@ -1,13 +1,16 @@
 import { runKTVServer } from "@/ktvServer";
 import { Storage } from "@/storage";
+import { ArchiveStore } from "@/archiveStore";
 import ktvLogger from "@/logger";
 process.env.NODE_ENV||='production';
 ktvLogger.info('Node Env is: ', process.env.NODE_ENV);
 ktvLogger.info('Debug Mode is: ', process.env.DEBUG_MODE);
 
 const storage = new Storage(process.env.REDIS_URL)
+// 房间存档层（SQLite，只读维度）；live 维度仍走 Redis
+const archiveStore = new ArchiveStore();
 // 启动 KTV Koa 服务器
-const KTVServer = runKTVServer(storage);
+const KTVServer = runKTVServer(storage, archiveStore);
 const koaApp = KTVServer.app;
 koaApp.use(async (ctx) => {
     ctx.status = 404;
@@ -28,6 +31,7 @@ const server = koaApp.listen(port, host, () => {
 function shutdown(signal: string) {
     ktvLogger.info(`[shutdown] ${signal}`);
     storage.close();
+    archiveStore.close();
     KTVServer.close();
     server.close(() => {
         ktvLogger.info('server closed');

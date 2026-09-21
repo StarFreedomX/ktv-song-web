@@ -1,20 +1,24 @@
 import request from 'supertest';
 import { runKTVServer } from '@/ktvServer';
 import { Storage } from "@/storage";
+import { ArchiveStore } from '@/archiveStore';
+import { createTestStorage } from '@/testStorage';
 
 let server: any;
 let KTVServer: any;
 let storage: Storage;
+let archive: ArchiveStore;
 
 beforeAll(async () => {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    storage = new Storage(redisUrl);
-    KTVServer = runKTVServer(storage);
+    storage = createTestStorage().storage;
+    archive = new ArchiveStore(':memory:');
+    KTVServer = runKTVServer(storage, archive);
     const koaApp = KTVServer.app;
     server = koaApp.listen();
 });
 
 afterAll(async () => {
+    archive?.close();
     if (storage) {
         storage.close();
     }

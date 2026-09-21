@@ -19,8 +19,11 @@ services:
             SEARCH_CACHE_EXPIRE_TIME: 24h #用户单次搜索结果的缓存过期时间，过期后再次搜索会重新计算
             SEARCH_CATALOG_EXPIRE_TIME: 14d #对于匹配到的歌曲的缓存过期时间，过期后再次搜索会重新计算
             IMAGE_CACHE_EXPIRE_TIME: 24h
+            ROOM_ARCHIVE_DB_PATH: /app/data/rooms.db #房间存档 SQLite 文件路径
         depends_on:
             - redis
+        volumes:
+            - ktv_room_archive:/app/data
 
     # 前端服务
     ktv-web-frontend:
@@ -50,3 +53,4 @@ services:
 
 volumes:
     redis_data:
+    ktv_room_archive:

@@ -4,6 +4,9 @@ import Home from '../Home.vue'
 import AppMain from '../App.vue'
 
 const routes = [
+    { path: '/history', name: 'RoomHistory', component: () => import('../RoomHistory.vue') },
+    { path: '/history/transfer', name: 'RoomHistoryTransfer', component: () => import('../RoomHistoryTransfer.vue') },
+    { path: '/history/:uuid', name: 'RoomArchive', component: () => import('../RoomArchive.vue') },
     {
         path: '/',
         name: 'Home',

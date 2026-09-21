@@ -16,6 +16,7 @@ import QueueList from "./modals/QueueList.vue";
 import HistoryList from "./modals/HistoryList.vue";
 import ComfirmButton from "./modals/components/ComfirmButton.vue";
 import Toast from "./components/Toast.vue";
+import { rememberRoom } from './roomHistory';
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
@@ -39,6 +40,7 @@ const UpdateStatus = Object.freeze({
 const route = useRoute();
 const roomIdFromUrl = route.query.roomId;
 const roomId = ref(roomIdFromUrl);
+const roomUuid = ref('');
 const copyLinkStatus = ref('');
 const helpUrl = 'https://jcntv1iqoo5s.feishu.cn/wiki/Ytt1wNh88i6E9jkEndhcxNmYnBd';
 
@@ -91,6 +93,7 @@ const showSettings = ref(false);
 const showAddModal = ref(false);
 const showBiliSearchModal = ref(false);
 const roomNotFound = ref(false);
+const serviceError = ref('');
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -767,6 +770,17 @@ const load = async () => {
         }
         const data = await res.json();
 
+        if (!res.ok) {
+            serviceError.value = data.msg || '服务暂不可用，请稍后重试';
+            throw new Error(serviceError.value);
+        }
+        serviceError.value = '';
+        const loadedUuid = data.list?.uuid || data.uuid || '';
+        if (roomUuid.value !== loadedUuid) {
+            roomUuid.value = loadedUuid;
+            try { rememberRoom({ uuid: loadedUuid, roomId: roomId.value }); }
+            catch { showToast('无法保存历史房间，请检查浏览器本地存储权限'); }
+        }
         if (data.changed) {
             const oldQueued = [...queued.value];
 
@@ -846,6 +860,7 @@ const load = async () => {
         }
     } catch (e) {
         console.error("Load Error:", e);
+        throw e;
     }
 };
 
@@ -1024,8 +1039,11 @@ watch(() => cfg.value.wsMode, (isWS) => {
 onMounted(async () => {
     // 房间存在性校验：不存在则进入“房间不存在”全屏状态
     try {
-        const res = await fetch(`api/roomExists?roomId=${encodeURIComponent(roomId.value ?? '')}`).then(r => r.json());
-        if (!res.exists) {
+        const response = await fetch(`api/roomExists?roomId=${encodeURIComponent(roomId.value ?? '')}`);
+        const res = await response.json();
+        if (!response.ok) {
+            serviceError.value = res.msg || '服务暂不可用，请稍后重试';
+        } else if (res.exists === false) {
             roomNotFound.value = true;
             return;
         }
@@ -1055,6 +1073,7 @@ onUnmounted(() => {
 
 <template>
     <div class="brand-theme">
+    <p v-if="serviceError" role="alert" class="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{{ serviceError }}</p>
 
     <div v-if="roomNotFound" class="room-not-found-overlay">
         <div class="room-not-found-card">
@@ -1131,10 +1150,10 @@ onUnmounted(() => {
         </div>
         <div class="mt-2">
             <div class="flex items-center gap-2">
-                <p class="text-sub">房间ID: {{ roomId }}</p>
+                <p class="text-sub min-w-0 break-all">房间ID: {{ roomId }}</p>
                 <button
                     type="button"
-                    class="cursor-pointer"
+                    class="cursor-pointer shrink-0"
                     :class="['copy-link-btn', { copied: copyLinkStatus }]"
                     :aria-label="copyLinkStatus || '复制房间链接'"
                     :title="copyLinkStatus || '复制房间链接'"
@@ -1172,6 +1191,7 @@ onUnmounted(() => {
                     <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
                 </button>
             </div>
+            <p v-if="roomUuid" class="text-[10px] text-slate-400 break-all mt-1">UUID: {{ roomUuid }}</p>
             <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
         </div>
     </header>

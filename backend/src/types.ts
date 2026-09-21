@@ -27,7 +27,9 @@ export interface SongLists {
     singing: Song | null,
     sung: Song[],
     createdAt?: number,
-    updatedAt?: number
+    updatedAt?: number,
+    /** 房间存档身份（持久维度）；live 维度仍以 roomId 为指针 */
+    uuid?: string
 }
 
 export interface Song {

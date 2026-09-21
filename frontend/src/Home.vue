@@ -57,6 +57,7 @@
             </div>
 
             <div class="mt-8 flex flex-col items-center gap-4">
+                <RouterLink to="/history" class="text-sm font-bold text-slate-500 hover:text-[#FE3C71] transition-colors">历史房间记录 →</RouterLink>
                 <div class="flex items-center gap-4">
                     <a
                         href="https://github.com/starfreedomx/ktv-song-web"
@@ -106,7 +107,7 @@ const createRoom = async () => {
         const res = await fetch(`${createRoomUrl}?roomId=${encodeURIComponent(roomId)}`, { method: 'POST' });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data) {
-            errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+            errorMsg.value = data?.msg || '服务暂不可用，请稍后重试或联系部署者检查后端服务';
         } else if (data.success) {
             router.push({ name: 'Room', query: { roomId } });
         } else if (data.msg === '房间已存在') {
@@ -135,7 +136,7 @@ const joinRoom = async () => {
         const res = await fetch(`${roomExistsUrl}?roomId=${encodeURIComponent(roomId)}`);
         const data = await res.json().catch(() => null);
         if (!res.ok || !data) {
-            errorMsg.value = '无法连接服务器，请检查后端是否已启动';
+            errorMsg.value = data?.msg || '服务暂不可用，请稍后重试或联系部署者检查后端服务';
         } else if (data.exists) {
             router.push({ name: 'Room', query: { roomId } });
         } else {

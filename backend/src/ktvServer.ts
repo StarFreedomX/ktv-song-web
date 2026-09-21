@@ -1,4 +1,5 @@
 import process from "node:process";
+import { randomUUID } from 'node:crypto';
 import { LRUCache } from 'lru-cache';
 import axios from "axios";
 import ktvLogger from "@/logger";
@@ -6,7 +7,8 @@ import Koa from "koa";
 import Router from "@koa/router";
 import bodyParser from 'koa-bodyparser';
 import websockify from 'koa-websocket';
-import { Storage } from "@/storage";
+import { Storage, StorageUnavailableError } from "@/storage";
+import { ArchiveStore } from "@/archiveStore";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
@@ -40,9 +42,21 @@ function parseDurationMs(value: string | undefined, fallback: number) {
     return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : fallback;
 }
 
-export function runKTVServer(storage: Storage) {
+export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const app = websockify(new Koa());
     const router = new Router();
+    app.use(async (ctx, next) => {
+        try {
+            await next();
+        } catch (error) {
+            if (!(error instanceof StorageUnavailableError)) throw error;
+            ktvLogger.error('[Redis unavailable]', ctx.method, ctx.path,
+                error.cause instanceof Error ? error.cause.message : error.message);
+            ctx.status = 503;
+            ctx.set('Retry-After', '5');
+            ctx.body = { success: false, code: 'REDIS_UNAVAILABLE', msg: error.message };
+        }
+    });
     app.use(bodyParser());
 
     const DEFAULT_CACHE_DATA_EXPIRE_TIME = 24 * 60 * 60 * 1000;
@@ -148,10 +162,15 @@ export function runKTVServer(storage: Storage) {
     const persistRoom = async (roomId: string, songLists: SongLists) => {
         songLists.updatedAt = Date.now();
         await storage.set(DATABASE_NAME, roomId, songLists, CACHE_EXPIRE_TIME);
+        // 写透存档（只读维度）；存量房间无 uuid 时跳过
+        if (songLists.uuid) {
+            archiveStore.upsert(songLists.uuid, roomId, songLists);
+        }
     };
 
     // 统一房间存在性校验：缓存命中直接返回；缓存未命中查 Redis；Redis 也没有 → null（调用方拒绝）
     const ensureRoom = async (roomId: string): Promise<SongLists | null> => {
+        storage.assertReady();
         if (roomSongsCache[roomId]) return roomSongsCache[roomId];
         const lists = await songListTools.initSongLists(storage, roomId);
         if (lists === null) return null;
@@ -198,12 +217,17 @@ export function runKTVServer(storage: Storage) {
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
         const roomIdError = validateRoomId(roomId);
         if (!roomId || roomIdError) return koaCtx.body = { success: false, msg: roomIdError };
-        const created = await storage.setIfAbsent(DATABASE_NAME, roomId, songListTools.getEmptySongLists(), CACHE_EXPIRE_TIME);
+        // 生成存档身份 uuid（live 维度仍以 roomId 为指针）
+        const uuid = randomUUID();
+        const emptySongLists = songListTools.getEmptySongLists(uuid);
+        const created = await storage.setIfAbsent(DATABASE_NAME, roomId, emptySongLists, CACHE_EXPIRE_TIME);
         if (!created) {
             ktvLogger.debug('CREATE REJECT', roomId, 'already exists');
             return koaCtx.body = { success: false, msg: '房间已存在' };
         }
-        roomSongsCache[roomId] = songListTools.getEmptySongLists();
+        // 落一条空存档（尽力而为，失败不影响 live）
+        archiveStore.upsert(uuid, roomId, emptySongLists);
+        roomSongsCache[roomId] = emptySongLists;
         roomOpCache[roomId] = [];
         ktvLogger.info('Room created:', roomId);
         koaCtx.body = { success: true, roomId };
@@ -217,7 +241,42 @@ export function runKTVServer(storage: Storage) {
             return koaCtx.body = { exists: false };
         }
         const roomData = await storage.get(DATABASE_NAME, roomId);
-        koaCtx.body = { exists: roomData !== undefined };
+        const expectedUuid = koaCtx.query.uuid;
+        koaCtx.body = { exists: roomData !== undefined && (!expectedUuid || (roomData as SongLists).uuid === expectedUuid) };
+    });
+
+    // 存档只读接口：按 uuid 查看历史房间数据（存档维度，与 live 房间无关，不写任何缓存）
+    router.get('/api/roomArchive', async (koaCtx) => {
+        const { uuid: uuids } = koaCtx.query;
+        const uuid = Array.isArray(uuids) ? uuids.at(0) : uuids;
+        if (typeof uuid !== 'string' || uuid.length === 0) {
+            koaCtx.status = 400;
+            koaCtx.body = { success: false, msg: '缺少 uuid' };
+            return;
+        }
+        const archive = archiveStore.getByUuid(uuid);
+        if (!archive) {
+            koaCtx.status = 404;
+            koaCtx.body = { success: false, msg: '存档不存在' };
+            return;
+        }
+        let active: boolean | null = null;
+        try {
+            const live = await storage.get<SongLists>(DATABASE_NAME, archive.roomId);
+            active = live?.uuid === archive.uuid;
+        } catch (error) {
+            if (!(error instanceof StorageUnavailableError)) throw error;
+            ktvLogger.warn('[RoomArchive]', 'Redis unavailable; live status unknown');
+        }
+        koaCtx.body = {
+            success: true,
+            uuid: archive.uuid,
+            roomId: archive.roomId,
+            songLists: archive.songLists,
+            createdAt: archive.createdAt,
+            updatedAt: archive.updatedAt,
+            active
+        };
     });
 
     // 获取歌曲列表及当前哈希
@@ -241,7 +300,7 @@ export function runKTVServer(storage: Storage) {
 
         // clientHash 为空或不匹配时
         if (clientHash && clientHash === serverHash) {
-            return koaCtx.body = { changed: false, hash: serverHash };
+            return koaCtx.body = { changed: false, hash: serverHash, uuid: currentSongLists.uuid };
         }
 
         koaCtx.body = {
@@ -372,6 +431,7 @@ export function runKTVServer(storage: Storage) {
             koaCtx.body = { success: true, hash: finalHash };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -484,6 +544,7 @@ export function runKTVServer(storage: Storage) {
             koaCtx.body = { success: true, hash: finalHash, song: prevSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -566,6 +627,7 @@ export function runKTVServer(storage: Storage) {
             koaCtx.body = { success: true, hash: finalHash, song: targetSong };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.debug('REJECT')
             koaCtx.body = { success: false, code: 'REJECT' };
         }
@@ -654,6 +716,7 @@ export function runKTVServer(storage: Storage) {
                 items: attachProxyImage(sortedItems)
             };
         } catch (error) {
+            if (error instanceof StorageUnavailableError) throw error;
             ktvLogger.error('Bilibili search failed', error);
             koaCtx.status = 500;
             koaCtx.body = {
@@ -864,6 +927,7 @@ export function runKTVServer(storage: Storage) {
             koaCtx.body = { success: true, hash: finalHash, song };
             notifyUpdate(roomId, finalHash)
         } catch (e) {
+            if (e instanceof StorageUnavailableError) throw e;
             ktvLogger.error("Operation re-run failed:", e);
             koaCtx.body = { success: false, code: 'REJECT' };
             ktvLogger.debug('REJECT')

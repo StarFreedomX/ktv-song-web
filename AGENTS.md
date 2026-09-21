@@ -10,6 +10,7 @@
 - Duration env vars may use `ms`, `s`, `m`, `h`, or `d` suffixes; prefer readable forms like `5m`, `1h`, and `24h` in compose/docs.
 - Update `readme.md` whenever startup steps, cache behavior, or search integration behavior changes.
 - Avoid broad refactors; keep edits focused on the requested feature or fix.
+- 文档标题和正文只保留必要信息，不添加“跟进最新提交”等多余修饰或显而易见的用途说明。例如使用“源码部署”“更新”，不要写“从源码部署，跟进最新提交”；操作步骤中必要的命令和条件应保留。
 
 ## Project Idea
 
