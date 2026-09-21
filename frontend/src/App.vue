@@ -441,33 +441,19 @@ const enqueueSong = async ({ title, url, onSuccess }) => {
     let rawUrl = (url || '').trim();
     if (!title || !rawUrl) return false;
 
-    // 计算有效长度（排除正在删除的）
-    const effectiveLen = queued.value.filter(s => !s.isDeleting).length;
-
     const newSong = {
         id: 's-' + Math.random().toString(36).slice(2, 11),
         title,
         url: rawUrl,
-        addedBy: cfg.value.nickname,
-        isNew: true
+        addedBy: cfg.value.nickname
     };
 
-    // 插入到 queued 中（乐观更新；失败时回滚并保留表单内容，方便修改重试）
-    queued.value.splice(effectiveLen, 0, newSong);
-
-    setTimeout(() => {
-        const target = queued.value.find(s => s.id === newSong.id);
-        if (target) target.isNew = false;
-    }, 600);
-
+    // 按当前歌单提交到队尾；新增歌曲由服务端同步结果显示。
     const success = await commitOp({
-        song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
+        song: newSong, toIndex: queued.value.length
     });
     if (!success) {
-        // 失败时回滚乐观插入的歌曲，避免幽灵歌曲留在队列
-        // （后端拒绝不会改变 hash，随后拉取对账会因 changed:false 被跳过，必须主动移除）
-        const ghostIdx = queued.value.findIndex(s => s.id === newSong.id);
-        if (ghostIdx !== -1) queued.value.splice(ghostIdx, 1);
+        // 保留输入，并同步确认服务端状态。
         requestSync();
     }
     else {
