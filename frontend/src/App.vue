@@ -94,6 +94,8 @@ const showSettings = ref(false);
 const showAddModal = ref(false);
 const showBiliSearchModal = ref(false);
 const roomNotFound = ref(false);
+const createRoomLoading = ref(false);
+const createRoomError = ref('');
 const serviceError = ref('');
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
@@ -1170,6 +1172,35 @@ watch(() => cfg.value.wsMode, (isWS) => {
     }
 });
 
+const createMissingRoom = async () => {
+    if (createRoomLoading.value) return;
+    createRoomError.value = '';
+    if (typeof roomId.value !== 'string' || !roomId.value.trim()) {
+        createRoomError.value = '房间号无效，请返回首页输入房间号';
+        return;
+    }
+    createRoomLoading.value = true;
+    try {
+        const response = await fetch(`/api/createRoom?roomId=${encodeURIComponent(roomId.value)}`, { method: 'POST' });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) {
+            createRoomError.value = data?.msg || '服务暂不可用，请稍后重试';
+        } else if (data.success) {
+            // 重新执行房间初始化，启动歌单同步、连接和昵称设置。
+            window.location.reload();
+        } else if (data.msg === '房间已存在') {
+            createRoomError.value = '该房间号已被占用，请返回首页更换房间号或加入已有房间';
+        } else {
+            createRoomError.value = data.msg || '创建房间失败，请重试';
+        }
+    } catch (e) {
+        console.error('Create Room Error:', e);
+        createRoomError.value = '无法连接服务器，请检查网络后重试';
+    } finally {
+        createRoomLoading.value = false;
+    }
+};
+
 onMounted(async () => {
     // 房间存在性校验：不存在则进入“房间不存在”全屏状态
     try {
@@ -1232,11 +1263,21 @@ onUnmounted(() => {
             </div>
 
             <h2 class="room-not-found-title">房间不存在或已失效</h2>
-            <p class="room-not-found-desc">房间可能已被删除，或链接已失效。请返回首页重新创建或加入房间。</p>
+            <p class="room-not-found-desc">房间可能已被删除，或链接已失效。可以直接创建当前房间，或返回首页创建或加入其他房间。</p>
+            <p v-if="roomId" class="room-not-found-desc break-all">房间号：{{ roomId }}</p>
+            <p v-if="createRoomError" role="alert" class="mt-4 text-sm font-bold text-red-500">{{ createRoomError }}</p>
 
             <ComfirmButton
                 type="primary"
-                class="w-full mt-8"
+                class="w-full mt-8 disabled:opacity-50 disabled:cursor-wait"
+                :disabled="createRoomLoading"
+                @click="createMissingRoom"
+            >
+                {{ createRoomLoading ? '创建中…' : '创建房间' }}
+            </ComfirmButton>
+            <ComfirmButton
+                type="secondary"
+                class="w-full mt-3"
                 @click="backHome()"
             >
                 返回首页
