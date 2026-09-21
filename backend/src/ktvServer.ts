@@ -513,23 +513,12 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (currentSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
         const currentQueue = currentSongLists.queued;
 
-        const serverHash = getHash(currentSongLists);
-        const nowIdArray = currentQueue.map(s => s.id);
-        const logs = roomOpCache[roomId] || [];
-        const latest = idArrayHash === serverHash;
-        let hitIdx = -1;
-        if (!latest) {
-            for (let i = logs.length - 1; i >= 0; i--) {
-                if (logs[i].baseHash === idArrayHash) {
-                    hitIdx = i;
-                    break;
-                }
-            }
-            if (hitIdx === -1) return koaCtx.body = { success: false, code: 'REJECT' };
+        // 上一首按当前播放状态执行，拒绝旧请求，避免重复回退。
+        if (idArrayHash !== getHash(currentSongLists)) {
+            return koaCtx.body = { success: false, code: 'REJECT' };
         }
-
-        const baseIdArray = latest ? nowIdArray : [...logs[hitIdx].baseIdArray];
-        const laterOps = latest ? [] : [...logs.slice(hitIdx)];
+        const baseIdArray = currentQueue.map(s => s.id);
+        const logs = roomOpCache[roomId] || [];
 
         if (!currentSongLists.sung?.length) {
             if (currentSongLists.singing) {
@@ -542,7 +531,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
                     toIndex: 0,
                     timestamp: Date.now()
                 };
-                const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, laterOps, currentOp);
+                const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, [], currentOp);
                 logs.push(currentOp);
                 if (logs.length > 50) logs.shift();
                 roomOpCache[roomId] = logs;
@@ -583,7 +572,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         } : null;
 
         try {
-            const finalQueuedSongs = currentOp ? songOperation([...currentQueue], baseIdArray, laterOps, currentOp) : [...currentQueue];
+            const finalQueuedSongs = currentOp ? songOperation([...currentQueue], baseIdArray, [], currentOp) : [...currentQueue];
             if (currentOp) {
                 logs.push(currentOp);
                 if (logs.length > 50) logs.shift();
