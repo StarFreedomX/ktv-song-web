@@ -237,7 +237,13 @@ watch([allowUpdate, updateStatus], ([canUpdate, status]) => {
     }
 });
 
+let updateInFlight = false;
+let recoverySyncPending = false;
+let syncDisposed = false;
+
 async function performUpdate() {
+    if (updateInFlight || syncDisposed) return;
+    updateInFlight = true;
     updateStatus.value = UpdateStatus.FETCHING;
     currentSync.value = SyncStatus.FETCHING; // 切换到拉取中
 
@@ -249,6 +255,13 @@ async function performUpdate() {
         console.error(e);
         updateStatus.value = UpdateStatus.IDLE;
         showTransientStatus(SyncStatus.FAILED); // 失败闪烁
+    } finally {
+        updateInFlight = false;
+        // 恢复事件发生在旧请求期间时，完成后再校验一次，避免并发拉取。
+        if (recoverySyncPending && !syncDisposed && !roomNotFound.value) {
+            recoverySyncPending = false;
+            updateStatus.value = UpdateStatus.WAITING;
+        }
     }
 }
 
@@ -954,9 +967,31 @@ let socket = null;
 let pollingTimer = null;
 let reconnectTimer = null;
 let pingTimer = null;
+let recoverySyncTimer = null;
+
+// 合并 pageshow、visibilitychange、online 和连接成功的相邻通知。
+const requestRecoverySync = () => {
+    if (syncDisposed || roomNotFound.value || recoverySyncTimer !== null) return;
+    recoverySyncTimer = setTimeout(() => {
+        recoverySyncTimer = null;
+        if (syncDisposed || roomNotFound.value) return;
+        if (updateInFlight) {
+            recoverySyncPending = true;
+        } else {
+            updateStatus.value = UpdateStatus.WAITING;
+        }
+    }, 100);
+};
+
+const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') requestRecoverySync();
+};
 
 // 停止所有同步
 const stopSyncDrivers = () => {
+    clearTimeout(recoverySyncTimer);
+    recoverySyncTimer = null;
+    recoverySyncPending = false;
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (pingTimer) clearTimeout(pingTimer);
     if (socket) {
@@ -980,6 +1015,7 @@ const initWebSocket = () => {
 
     socket.onopen = () => {
         currentSync.value = SyncStatus.WS_ONLINE;
+        requestRecoverySync();
         console.log("WebSocket connected");
         pingTimer = setInterval(() => {
             if (socket.readyState === WebSocket.OPEN) {
@@ -1052,6 +1088,11 @@ onMounted(async () => {
         console.error('Room Exists Check Error:', e);
     }
 
+    if (syncDisposed) return;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pageshow', requestRecoverySync);
+    window.addEventListener('online', requestRecoverySync);
+
     if (!cfg.value.nickname) showNicknameModal.value = true;
 
     // 首次进入：触发状态机拉取数据
@@ -1066,6 +1107,10 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+    syncDisposed = true;
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pageshow', requestRecoverySync);
+    window.removeEventListener('online', requestRecoverySync);
     stopSyncDrivers();
 });
 
