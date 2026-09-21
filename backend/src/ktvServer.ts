@@ -12,6 +12,7 @@ import { ArchiveStore } from "@/archiveStore";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
 import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
+import { createRidMiddleware } from "./middleware";
 
 const DURATION_MULTIPLIERS = {
     ms: 1,
@@ -69,6 +70,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const DEFAULT_IMAGE_PROXY_MAX_BYTES = 5 * 1024 * 1024;
     const DEFAULT_IMAGE_PROXY_TIMEOUT_MS = 8000;
     const SEARCH_CLICK_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+    const DEFAULT_RID_EXPIRED_TIME = 1 * 60 * 1000;
 
     // 校验 roomId
     const BVID_REGEX = /^BV[a-zA-Z0-9]{10}$/;
@@ -82,6 +84,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const ENABLE_BILIBILI_IMAGE_PROXY = process.env.ENABLE_BILIBILI_IMAGE_PROXY === 'true';
     const IMAGE_PROXY_MAX_BYTES = Number(process.env.IMAGE_PROXY_MAX_BYTES) || DEFAULT_IMAGE_PROXY_MAX_BYTES;
     const IMAGE_PROXY_TIMEOUT_MS = Number(process.env.IMAGE_PROXY_TIMEOUT_MS) || DEFAULT_IMAGE_PROXY_TIMEOUT_MS;
+    const RID_EXPIRED_TIME = parseDurationMs(process.env.RID_EXPIRED_TIME, DEFAULT_RID_EXPIRED_TIME);
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
@@ -210,7 +213,9 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         ctx.websocket.on('close', (code: string, reason: string) => console.log('Closed with:', code, reason));
     });
 
-
+    // rid中间件
+    const ridMiddleware = createRidMiddleware(storage, RID_EXPIRED_TIME);
+    router.use(ridMiddleware);
     // 创建房间：已存在则拒绝，防止两拨人用同一房间号串房
     router.post('/api/createRoom', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
@@ -937,6 +942,13 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             ktvLogger.debug('REJECT')
         }
     });
+
+/*     router.get('/test',async (koaCtx)=>{
+        console.log(koaCtx.header)
+        if(koaCtx.header["request-id"]==='111')
+            koaCtx.body = { success: true, rid: true }
+        else koaCtx.body = { success: true }
+    }) */
 
     app.ws.use(wsRouter.routes() as any);
     app.use(router.routes()).use(router.allowedMethods());
