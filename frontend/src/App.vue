@@ -1,6 +1,6 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
-import { initUtils } from "./utils";
+import { initUtils, createUUId } from "./utils";
 import { useRoute } from 'vue-router';
 import ShuffleConfirmModal from "./modals/ShuffleConfirmModal.vue";
 import SettingsModal from "./modals/SettingsModal.vue";
@@ -71,6 +71,7 @@ const cfg = ref({
 // api接口
 const lastHash = ref(EMPTY_HASH);
 const commitApiUrl = "api/songOperation"
+const addSongUrl = "api/addSong"
 const loadSongListUrl = "api/songListInfo"
 const nextSongUrl = "api/nextSong"
 const prevSongUrl = "api/prevSong"
@@ -93,6 +94,8 @@ const showSettings = ref(false);
 const showAddModal = ref(false);
 const showBiliSearchModal = ref(false);
 const roomNotFound = ref(false);
+const createRoomLoading = ref(false);
+const createRoomError = ref('');
 const serviceError = ref('');
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
@@ -121,6 +124,9 @@ const expandedBvid = ref(null);
 const isRefreshing = ref(false);
 const updateStatus = ref(UpdateStatus.IDLE);
 const allowUpdate = computed(() => !isDragging.value && !isRefreshing.value);
+
+let addAttempt = null;
+let songStateVersion = 0;
 
 // 工具函数
 const {
@@ -216,6 +222,12 @@ watch(showAddModal, (visible) => {
     }
 });
 
+// 关闭/重开窗口或修改输入后，即使又改回原内容，也属于新的一次提交。
+watch([
+    showAddModal, showBiliSearchModal, roomId,
+    () => form.value.title, () => form.value.url, () => cfg.value.nickname
+], () => { addAttempt = null; }, { flush: 'sync' });
+
 // 监听正在播放歌曲的变化
 watch(() => singing.value, (newSong, oldSong) => {
     // 只有当开启了主机模式，且新歌确实存在，且与旧歌不同（通过 ID 判断）时执行
@@ -237,18 +249,55 @@ watch([allowUpdate, updateStatus], ([canUpdate, status]) => {
     }
 });
 
+let updateInFlight = false;
+let syncPending = false;
+let syncDisposed = false;
+let syncRetryTimer = null;
+let syncAbortController = null;
+
+// 所有同步入口共用：请求期间只记一次待更新，不打断当前结果的应用。
+const requestSync = () => {
+    if (syncDisposed || roomNotFound.value) return;
+    clearTimeout(syncRetryTimer);
+    syncRetryTimer = null;
+    if (updateInFlight) {
+        syncPending = true;
+    } else {
+        updateStatus.value = UpdateStatus.WAITING;
+    }
+};
+
 async function performUpdate() {
+    if (updateInFlight || syncDisposed || roomNotFound.value) return;
+    updateInFlight = true;
+    syncPending = false;
     updateStatus.value = UpdateStatus.FETCHING;
-    currentSync.value = SyncStatus.FETCHING; // 切换到拉取中
+    currentSync.value = SyncStatus.FETCHING;
+    let failed = false;
 
     try {
         await load();
-        updateStatus.value = UpdateStatus.IDLE;
-        showTransientStatus(SyncStatus.SUCCESS); // 成功闪烁
+        if (!syncDisposed && !roomNotFound.value) showTransientStatus(SyncStatus.SUCCESS);
     } catch (e) {
-        console.error(e);
+        failed = true;
+        if (!syncDisposed && !roomNotFound.value) {
+            console.error(e);
+            showTransientStatus(SyncStatus.FAILED);
+        }
+    } finally {
+        updateInFlight = false;
         updateStatus.value = UpdateStatus.IDLE;
-        showTransientStatus(SyncStatus.FAILED); // 失败闪烁
+        if (!syncDisposed && !roomNotFound.value) {
+            if (failed) {
+                // 只重试读取歌单，不重放点歌、切歌等写操作。
+                syncRetryTimer = setTimeout(() => {
+                    syncRetryTimer = null;
+                    requestSync();
+                }, 3000);
+            } else if (syncPending) {
+                requestSync();
+            }
+        }
     }
 }
 
@@ -338,11 +387,10 @@ const commitOp = async (opData) => {
         }).then(r => r.json());
 
         if (res.success) {
-            if (lastHash.value !== res.hash) {
-                updateStatus.value = UpdateStatus.WAITING;
+            if (updateInFlight || lastHash.value !== res.hash) {
+                requestSync();
             } else {
                 lastHash.value = res.hash;
-                updateStatus.value = UpdateStatus.IDLE
             }
             if (res.song && opData.song) {
                 // 更新本地缓存中的歌曲信息（在 queued / singing / sung 中查找）
@@ -357,7 +405,7 @@ const commitOp = async (opData) => {
         } else if (res.code === 'REJECT') {
             // 如果被拒绝，说明前端 Hash 过时
             lastHash.value = EMPTY_HASH; // 重置
-            updateStatus.value = UpdateStatus.WAITING;
+            requestSync();
         } else if (res.msg) {
             // 其他失败（校验不通过、房间不存在等）：toast 提示后端原因
             showToast(res.msg);
@@ -401,46 +449,77 @@ const add = async () => {
     });
 }
 
+const applyAddedSong = async (data, attempt, expectedVersion) => {
+    if (!data.success || !data.hash || !data.song || data.song.id !== attempt.song.id ||
+        updateInFlight || !allowUpdate.value || syncDisposed || roomId.value !== attempt.roomId ||
+        songStateVersion !== expectedVersion) return false;
+    const snapshot = JSON.stringify({ queued: queued.value, singing: singing.value, sung: sung.value });
+    const lists = JSON.parse(snapshot);
+    const alreadyExists = [...lists.queued, ...lists.sung, lists.singing]
+        .some(song => song?.id === data.song.id);
+    if (!alreadyExists) lists.queued.push(data.song);
+    const hash = await getHash(lists);
+    // Hash 计算期间可能收到推送或发生本地操作，只有快照仍有效时才能应用。
+    if (hash !== data.hash || updateInFlight || !allowUpdate.value || syncDisposed ||
+        roomId.value !== attempt.roomId || songStateVersion !== expectedVersion || snapshot !== JSON.stringify({
+            queued: queued.value, singing: singing.value, sung: sung.value
+        })) return false;
+    // 保留已有歌曲对象，让删除、移动、编辑和动画回调继续引用同一对象。
+    if (!alreadyExists) queued.value = [...queued.value, data.song];
+    lastHash.value = hash;
+    songStateVersion++;
+    return true;
+};
+
 const enqueueSong = async ({ title, url, onSuccess }) => {
-    let rawUrl = (url || '').trim();
+    const rawUrl = (url || '').trim();
     if (!title || !rawUrl) return false;
-
-    // 计算有效长度（排除正在删除的）
-    const effectiveLen = queued.value.filter(s => !s.isDeleting).length;
-
-    const newSong = {
-        id: 's-' + Math.random().toString(36).slice(2, 11),
-        title,
-        url: rawUrl,
-        addedBy: cfg.value.nickname,
-        isNew: true
-    };
-
-    // 插入到 queued 中（乐观更新；失败时回滚并保留表单内容，方便修改重试）
-    queued.value.splice(effectiveLen, 0, newSong);
-
-    setTimeout(() => {
-        const target = queued.value.find(s => s.id === newSong.id);
-        if (target) target.isNew = false;
-    }, 600);
-
-    const success = await commitOp({
-        song: newSong, toIndex: effectiveLen // 使用排除删除项后的索引
-    });
-    if (!success) {
-        // 失败时回滚乐观插入的歌曲，避免幽灵歌曲留在队列
-        // （后端拒绝不会改变 hash，随后拉取对账会因 changed:false 被跳过，必须主动移除）
-        const ghostIdx = queued.value.findIndex(s => s.id === newSong.id);
-        if (ghostIdx !== -1) queued.value.splice(ghostIdx, 1);
-        updateStatus.value = UpdateStatus.WAITING;
+    const content = { title, url: rawUrl, addedBy: cfg.value.nickname };
+    const key = JSON.stringify([roomId.value, content]);
+    if (!addAttempt || addAttempt.key !== key) {
+        addAttempt = {
+            key,
+            roomId: roomId.value,
+            rid: createUUId(),
+            song: { id: createUUId(), ...content }
+        };
     }
-    else {
-        if (typeof onSuccess === 'function') {
-            await onSuccess();
+    const attempt = addAttempt;
+    const expectedVersion = songStateVersion;
+    try {
+        const response = await fetch(`${addSongUrl}?roomId=${encodeURIComponent(attempt.roomId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'request-id': attempt.rid },
+            body: JSON.stringify({ song: attempt.song })
+        });
+        let applied = false;
+        let data;
+        try {
+            data = await response.json();
+            if (response.ok) applied = await applyAddedSong(data, attempt, expectedVersion);
+        } finally {
+            // 包括 duplicated、业务拒绝及无法解析的响应，均校验当前歌单。
+            if (!applied && !syncDisposed) requestSync();
         }
-        resetAddSongState();
+        if (!response.ok || !data.success) {
+            if (addAttempt === attempt && data.msg) showToast(data.msg);
+            return false;
+        }
+        // 响应可以乱序到达，但旧请求不能清空新窗口/新输入。
+        if (addAttempt === attempt && !syncDisposed) {
+            if (typeof onSuccess === 'function') await onSuccess();
+            if (addAttempt === attempt && !syncDisposed) {
+                addAttempt = null;
+                showBiliSearchModal.value = false;
+                resetAddSongState();
+            }
+        }
+        return true;
+    } catch (e) {
+        console.error('Add Song Error:', e);
+        if (addAttempt === attempt && !syncDisposed) showToast('添加结果未确认，请重试');
+        return false;
     }
-    return success;
 };
 
 const resetAddSongState = () => {
@@ -578,7 +657,6 @@ const addBilibiliSearchResult = async (item) => {
         url: getBilibiliSongUrl(item.bvid, part?.page || 1),
         onSuccess: async () => {
             await trackBilibiliSelection(item);
-            showBiliSearchModal.value = false;
         }
     });
 };
@@ -590,7 +668,6 @@ const addBilibiliPart = async ({ item, part }) => {
         url: getBilibiliSongUrl(item.bvid, part.page),
         onSuccess: async () => {
             await trackBilibiliSelection(item);
-            showBiliSearchModal.value = false;
         }
     });
 };
@@ -659,7 +736,7 @@ const moveToTop = async (song) => {
         }, 10);
 
         if (!success) {
-            updateStatus.value = UpdateStatus.WAITING;
+            requestSync();
         } else {
             setTimeout(() => {
                 movedItem.isNew = false;
@@ -686,14 +763,10 @@ const undoSung = async (song) => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
     } catch (e) {
         console.error('Undo Sung Error:', e);
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
     }
 };
 
@@ -709,15 +782,11 @@ const nextSong = async () => {
             lastHash.value = EMPTY_HASH;
         }
         // 若成功或拒绝都触发拉取以同步最新状态
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
 
     } catch (e) {
         console.error("Next Song Error:", e);
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
     }
 };
 
@@ -732,14 +801,10 @@ const prevSong = async () => {
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
         }
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
     } catch (e) {
         console.error("Prev Song Error:", e);
-        if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-            updateStatus.value = UpdateStatus.WAITING;
-        }
+        requestSync();
     }
 };
 
@@ -749,7 +814,7 @@ async function shuffleSongs() {
         const response = await fetch(`${shuffleSongUrl}?roomId=${roomId.value}`, { method: 'POST' });
         const result = await response.json();
         if (result.success) {
-            updateStatus.value = UpdateStatus.WAITING;
+            requestSync();
         }
     } catch (e) {
         console.error("Shuffle failed:", e);
@@ -760,21 +825,28 @@ async function shuffleSongs() {
 const load = async () => {
     if (isDragging.value) return;
     if (roomNotFound.value) return;
+    const controller = new AbortController();
+    syncAbortController = controller;
+    const timeout = setTimeout(() => controller.abort(), 10000);
     try {
         const url = `${loadSongListUrl}?roomId=${roomId.value}&lastHash=${lastHash.value}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal: controller.signal, cache: 'no-store' });
+        if (syncDisposed) return;
         if (res.status === 404) {
             roomNotFound.value = true;
             stopSyncDrivers();
             return;
         }
         const data = await res.json();
+        clearTimeout(timeout);
+        if (syncDisposed) return;
 
         if (!res.ok) {
             serviceError.value = data.msg || '服务暂不可用，请稍后重试';
             throw new Error(serviceError.value);
         }
         serviceError.value = '';
+        songStateVersion++;
         const loadedUuid = data.list?.uuid || data.uuid || '';
         if (roomUuid.value !== loadedUuid) {
             roomUuid.value = loadedUuid;
@@ -798,8 +870,6 @@ const load = async () => {
                 lastHash.value = data.hash || EMPTY_HASH;
                 return;
             }
-
-            lastHash.value = data.hash;
 
             // 计算 ID 映射（仅基于 queued）
             const oldIdMap = new Map();
@@ -827,40 +897,40 @@ const load = async () => {
                 }
             });
 
-            // 等待退出动画完成
+            // 队列应用完成后再允许补拉，避免旧动画回调覆盖下一次结果。
+            await new Promise(resolve => setTimeout(resolve, 350));
+            if (syncDisposed) return;
+            queued.value = newQueuedSongsData.map((s, newIdx) => {
+                const oldIdx = oldIdMap.get(s.id);
+                const isNew = oldIdx === undefined;
+                const isActiveMove = activeMoveIds.has(s.id);
+                const isAffected = !isNew && !isActiveMove && oldIdx !== newIdx;
+                return {
+                    ...s,
+                    isMoved: isActiveMove,
+                    isNew: (isNew || isActiveMove),
+                    isAffected: isAffected
+                };
+            });
+            lastHash.value = data.hash;
+            const appliedQueue = queued.value;
+
             setTimeout(() => {
-                queued.value = newQueuedSongsData.map((s, newIdx) => {
-                    const oldIdx = oldIdMap.get(s.id);
-                    const isNew = oldIdx === undefined;
-                    const isActiveMove = activeMoveIds.has(s.id);
-                    const isAffected = !isNew && !isActiveMove && oldIdx !== newIdx;
-                    return {
-                        ...s,
-                        isMoved: isActiveMove,
-                        isNew: (isNew || isActiveMove),
-                        isAffected: isAffected
-                    };
+                appliedQueue.forEach(s => {
+                    if (s.isNew) s.isNewActive = true;
                 });
+            }, 10);
 
-
-
-                setTimeout(() => {
-                    queued.value.forEach(s => {
-                        if (s.isNew) s.isNewActive = true;
-                    });
-                }, 10);
-
-                // 清理状态
-                setTimeout(() => {
-                    queued.value.forEach(s => {
-                        s.isNew = s.isAffected = s.isNewActive = false;
-                    });
-                }, 600);
-            }, 350);
+            // 清理状态
+            setTimeout(() => {
+                appliedQueue.forEach(s => {
+                    s.isNew = s.isAffected = s.isNewActive = false;
+                });
+            }, 600);
         }
-    } catch (e) {
-        console.error("Load Error:", e);
-        throw e;
+    } finally {
+        clearTimeout(timeout);
+        if (syncAbortController === controller) syncAbortController = null;
     }
 };
 
@@ -906,7 +976,7 @@ const handleRefresh = async () => {
     isRefreshing.value = true;
 
     // 执行原有的 load 逻辑
-    updateStatus.value = UpdateStatus.WAITING;
+    requestSync();
 
     // 动画结束后重置状态
     setTimeout(() => {
@@ -954,17 +1024,51 @@ let socket = null;
 let pollingTimer = null;
 let reconnectTimer = null;
 let pingTimer = null;
+let pongTimer = null;
+let recoverySyncTimer = null;
+const WS_PING_INTERVAL = 20000;
+const WS_PONG_TIMEOUT = 10000;
+
+const clearHeartbeat = () => {
+    clearInterval(pingTimer);
+    clearTimeout(pongTimer);
+    pingTimer = null;
+    pongTimer = null;
+};
+
+const closeSocket = () => {
+    clearHeartbeat();
+    if (!socket) return;
+    const ws = socket;
+    socket = null;
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    ws.close();
+};
+
+// 合并 pageshow、visibilitychange、online 和连接成功的相邻通知。
+const requestRecoverySync = () => {
+    if (syncDisposed || roomNotFound.value || recoverySyncTimer !== null) return;
+    recoverySyncTimer = setTimeout(() => {
+        recoverySyncTimer = null;
+        if (syncDisposed || roomNotFound.value) return;
+        requestSync();
+    }, 100);
+};
+
+const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') requestRecoverySync();
+};
 
 // 停止所有同步
 const stopSyncDrivers = () => {
-    if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (pingTimer) clearTimeout(pingTimer);
-    if (socket) {
-        socket.onclose = null;
-        socket.close();
-        socket = null;
-        console.log("WebSocket disconnected")
-    }
+    clearTimeout(recoverySyncTimer);
+    recoverySyncTimer = null;
+    syncPending = false;
+    clearTimeout(syncRetryTimer);
+    syncRetryTimer = null;
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    closeSocket();
     if (pollingTimer) {
         clearInterval(pollingTimer);
         pollingTimer = null;
@@ -974,43 +1078,75 @@ const stopSyncDrivers = () => {
 
 // WebSocket
 const initWebSocket = () => {
-    socket = new WebSocket(wsUrl);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+    if (syncDisposed || roomNotFound.value || !cfg.value.wsMode) return;
+    closeSocket();
+    const ws = new WebSocket(wsUrl);
+    socket = ws;
+    const isCurrent = () => socket === ws && !syncDisposed && !roomNotFound.value && cfg.value.wsMode;
+    const reconnect = () => {
+        if (!isCurrent()) return;
+        closeSocket();
+        currentSync.value = SyncStatus.OFFLINE;
+        // 不等待失效连接的 close 事件，避免关闭握手阻塞重连。
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(initWebSocket, 3000);
+    };
     currentSync.value = SyncStatus.WS_CONNECTING;
     console.log("WebSocket connecting...");
 
-    socket.onopen = () => {
+    ws.onopen = () => {
+        if (!isCurrent()) return;
         currentSync.value = SyncStatus.WS_ONLINE;
+        requestRecoverySync();
         console.log("WebSocket connected");
         pingTimer = setInterval(() => {
-            if (socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ type: "ping" }));// 发送 ping
+            if (!isCurrent() || pongTimer !== null) return;
+            if (ws.readyState !== WebSocket.OPEN) return reconnect();
+            pongTimer = setTimeout(() => {
+                if (!isCurrent()) return;
+                console.warn('WS pong 超时，3秒后尝试重连...');
+                reconnect();
+            }, WS_PONG_TIMEOUT);
+            try {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            } catch (err) {
+                console.error('WS 心跳发送失败:', err);
+                reconnect();
             }
-        }, 20000); // 每 20 秒发送一次 ping
+        }, WS_PING_INTERVAL);
     };
 
-    socket.onmessage = async (event) => {
+    ws.onmessage = async (event) => {
+        if (!isCurrent()) return;
         try {
             const data = JSON.parse(event.data);
-            // 当服务端通知更新，且 Hash 与本地不一致时 load
-            if (data.type === 'UPDATE' && data.hash !== lastHash.value) {
-                if (updateStatus.value !== UpdateStatus.WAITING && updateStatus.value !== UpdateStatus.FETCHING) {
-                    updateStatus.value = UpdateStatus.WAITING;
-                }
+            if (data.type === 'pong') {
+                clearTimeout(pongTimer);
+                pongTimer = null;
+                return;
+            }
+            // 请求期间保留通知，即使 Hash 等于当前本地值，返回中的快照也可能不同。
+            if (data.type === 'UPDATE' && (updateInFlight || data.hash !== lastHash.value)) {
+                requestSync();
             }
         } catch (e) {
             console.error("WS Message Error:", e);
         }
     };
 
-    socket.onclose = () => {
-        currentSync.value = SyncStatus.OFFLINE;
+    ws.onclose = () => {
+        if (!isCurrent()) return;
         console.warn('WS 连接已断开，3秒后尝试重连...');
-        reconnectTimer = setTimeout(initWebSocket, 3000);
+        reconnect();
     };
 
-    socket.onerror = (err) => {
+    ws.onerror = (err) => {
+        if (!isCurrent()) return;
         showTransientStatus(SyncStatus.FAILED);
         console.error('WS 发生错误:', err);
+        reconnect();
     };
 };
 
@@ -1019,8 +1155,8 @@ const initPolling = () => {
     if (pollingTimer) return;
     currentSync.value = SyncStatus.POLLING_IDLE;
     pollingTimer = setInterval(() => {
-        // 轮询也只是改变状态，触发你的状态机
-        updateStatus.value = UpdateStatus.WAITING;
+        // 轮询与推送共用串行调度
+        requestSync();
     }, 5000);
     console.log("Interval HTTP enabled")
 };
@@ -1035,6 +1171,35 @@ watch(() => cfg.value.wsMode, (isWS) => {
         initPolling();
     }
 });
+
+const createMissingRoom = async () => {
+    if (createRoomLoading.value) return;
+    createRoomError.value = '';
+    if (typeof roomId.value !== 'string' || !roomId.value.trim()) {
+        createRoomError.value = '房间号无效，请返回首页输入房间号';
+        return;
+    }
+    createRoomLoading.value = true;
+    try {
+        const response = await fetch(`/api/createRoom?roomId=${encodeURIComponent(roomId.value)}`, { method: 'POST' });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data) {
+            createRoomError.value = data?.msg || '服务暂不可用，请稍后重试';
+        } else if (data.success) {
+            // 重新执行房间初始化，启动歌单同步、连接和昵称设置。
+            window.location.reload();
+        } else if (data.msg === '房间已存在') {
+            createRoomError.value = '该房间号已被占用，请返回首页更换房间号或加入已有房间';
+        } else {
+            createRoomError.value = data.msg || '创建房间失败，请重试';
+        }
+    } catch (e) {
+        console.error('Create Room Error:', e);
+        createRoomError.value = '无法连接服务器，请检查网络后重试';
+    } finally {
+        createRoomLoading.value = false;
+    }
+};
 
 onMounted(async () => {
     // 房间存在性校验：不存在则进入“房间不存在”全屏状态
@@ -1052,10 +1217,15 @@ onMounted(async () => {
         console.error('Room Exists Check Error:', e);
     }
 
+    if (syncDisposed) return;
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pageshow', requestRecoverySync);
+    window.addEventListener('online', requestRecoverySync);
+
     if (!cfg.value.nickname) showNicknameModal.value = true;
 
     // 首次进入：触发状态机拉取数据
-    updateStatus.value = UpdateStatus.WAITING;
+    requestSync();
 
     // 根据模式启动对应的驱动
     if (cfg.value.wsMode) {
@@ -1066,6 +1236,11 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+    syncDisposed = true;
+    syncAbortController?.abort();
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pageshow', requestRecoverySync);
+    window.removeEventListener('online', requestRecoverySync);
     stopSyncDrivers();
 });
 
@@ -1088,11 +1263,21 @@ onUnmounted(() => {
             </div>
 
             <h2 class="room-not-found-title">房间不存在或已失效</h2>
-            <p class="room-not-found-desc">房间可能已被删除，或链接已失效。请返回首页重新创建或加入房间。</p>
+            <p class="room-not-found-desc">房间可能已被删除，或链接已失效。可以直接创建当前房间，或返回首页创建或加入其他房间。</p>
+            <p v-if="roomId" class="room-not-found-desc break-all">房间号：{{ roomId }}</p>
+            <p v-if="createRoomError" role="alert" class="mt-4 text-sm font-bold text-red-500">{{ createRoomError }}</p>
 
             <ComfirmButton
                 type="primary"
-                class="w-full mt-8"
+                class="w-full mt-8 disabled:opacity-50 disabled:cursor-wait"
+                :disabled="createRoomLoading"
+                @click="createMissingRoom"
+            >
+                {{ createRoomLoading ? '创建中…' : '创建房间' }}
+            </ComfirmButton>
+            <ComfirmButton
+                type="secondary"
+                class="w-full mt-3"
                 @click="backHome()"
             >
                 返回首页

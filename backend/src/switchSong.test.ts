@@ -122,6 +122,50 @@ describe('SwitchSong next/prev flows', () => {
         expect(list.list.sung.map((s: any) => s.id)).toEqual(['A']);
     });
 
+    test('nextSong with stale hash when queue empty does not finish singing', async () => {
+        const room = `r-${Date.now()}-6`;
+        let res = await createRoom(room);
+        expect(res.body.success).toBe(true);
+        let list = await getList(room);
+        let hash = list.hash;
+
+        // add A, B
+        res = await op(room, { idArrayHash: hash, song: createSong('A'), toIndex: 0 }); hash = res.body.hash;
+        res = await op(room, { idArrayHash: hash, song: createSong('B'), toIndex: 1 }); hash = res.body.hash;
+
+        // next -> A singing, B in queue
+        res = await next(room, hash); hash = res.body.hash;
+        const oldHash = hash;
+
+        // next -> B singing, queue empty
+        res = await next(room, hash);
+        expect(res.body.success).toBe(true);
+        hash = res.body.hash;
+        list = await getList(room);
+        expect(list.list.singing.id).toBe('B');
+        expect(list.list.queued.map((s: any) => s.id)).toEqual([]);
+        expect(list.list.sung.map((s: any) => s.id)).toEqual(['A']);
+
+        // repeat next with old hash -> reject, B remains singing
+        res = await next(room, oldHash);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe('REJECT');
+        list = await getList(room);
+        expect(list.hash).toBe(hash);
+        expect(list.list.singing.id).toBe('B');
+        expect(list.list.queued.map((s: any) => s.id)).toEqual([]);
+        expect(list.list.sung.map((s: any) => s.id)).toEqual(['A']);
+
+        // next with current hash -> B moves to sung
+        res = await next(room, hash);
+        expect(res.body.success).toBe(true);
+        expect(res.body.song.id).toBe('B');
+        list = await getList(room);
+        expect(list.list.singing).toBe(null);
+        expect(list.list.queued.map((s: any) => s.id)).toEqual([]);
+        expect(list.list.sung.map((s: any) => s.id)).toEqual(['A', 'B']);
+    });
+
     test('prevSong when sung non-empty and singing exists swaps correctly', async () => {
         const room = `r-${Date.now()}-3`;
         await createRoom(room);

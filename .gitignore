@@ -25,3 +25,4 @@ tsconfig.tsbuildinfo
 /.playwright-mcp/
 
 *.db
+dump.rdb

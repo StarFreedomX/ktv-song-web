@@ -10,8 +10,9 @@ import websockify from 'koa-websocket';
 import { Storage, StorageUnavailableError } from "@/storage";
 import { ArchiveStore } from "@/archiveStore";
 import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterCachedBilibiliSearchVideos, getHash, isBilibiliUrl, mergeBilibiliSearchVideos, normalizeBilibiliSearchVideo, normalizeSearchText, resolveBilibiliData, searchBilibiliKtvVideos, sortBilibiliSearchVideos, songListTools, songOperation } from "@/utils";
-import { BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
+import { AddSongBody, BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
+import { createRidMiddleware } from "./middleware";
 
 const DURATION_MULTIPLIERS = {
     ms: 1,
@@ -69,6 +70,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const DEFAULT_IMAGE_PROXY_MAX_BYTES = 5 * 1024 * 1024;
     const DEFAULT_IMAGE_PROXY_TIMEOUT_MS = 8000;
     const SEARCH_CLICK_TTL_MS = 365 * 24 * 60 * 60 * 1000;
+    const DEFAULT_RID_EXPIRED_TIME = 1 * 60 * 1000;
 
     // 校验 roomId
     const BVID_REGEX = /^BV[a-zA-Z0-9]{10}$/;
@@ -82,6 +84,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     const ENABLE_BILIBILI_IMAGE_PROXY = process.env.ENABLE_BILIBILI_IMAGE_PROXY === 'true';
     const IMAGE_PROXY_MAX_BYTES = Number(process.env.IMAGE_PROXY_MAX_BYTES) || DEFAULT_IMAGE_PROXY_MAX_BYTES;
     const IMAGE_PROXY_TIMEOUT_MS = Number(process.env.IMAGE_PROXY_TIMEOUT_MS) || DEFAULT_IMAGE_PROXY_TIMEOUT_MS;
+    const RID_EXPIRED_TIME = parseDurationMs(process.env.RID_EXPIRED_TIME, DEFAULT_RID_EXPIRED_TIME);
 
     // 缓存变量，按 roomId 分隔
     const roomOpCache: Record<string, OpLog[]> = {}
@@ -173,9 +176,60 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         storage.assertReady();
         if (roomSongsCache[roomId]) return roomSongsCache[roomId];
         const lists = await songListTools.initSongLists(storage, roomId);
+        // 冷加载期间可能已有其他请求发布了更新，不能用旧 Redis 快照覆盖。
+        if (roomSongsCache[roomId]) return roomSongsCache[roomId];
         if (lists === null) return null;
         roomSongsCache[roomId] = lists;
         return lists;
+    };
+
+    // 新旧歌曲接口共用解析与校验，保持 B 站链接和分 P 处理一致。
+    const prepareSong = async (song: Song): Promise<string | null> => {
+        // 链接归一化：非 http/https/bilibili 开头自动补 https://；纯 BV/av 号转成 B 站视频链接
+        if (song && typeof song.url === 'string') {
+            song.url = normalizeSongUrl(song.url);
+        }
+
+        // 歌曲字段校验（解析前拦截非法数据，也避免非字符串 url 触发后续解析报错）
+        const songError = validateSong(song);
+        if (songError) return songError;
+
+        // 如果是 B 站链接
+        if (song && song.url && !song.url.startsWith('bilibili://') && (isBilibiliUrl(song.url) || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
+            const biliData = await resolveBilibiliData(song.url);
+            if (biliData) {
+                // 更新 URL
+                song.url = biliData.url;
+                if (!song.title) {
+                    song.title = `${song.title}${biliData.pNum ? `(p${biliData.pNum})` : ''}`;
+                }
+            }
+        }
+
+        // 解析后再次校验（B站解析可能改写 url / 追加分P到标题）
+        const finalSongError = validateSong(song);
+        if (finalSongError) return finalSongError;
+
+        return null;
+    };
+
+    // 新旧添加入口共用操作执行、日志和内存发布；这段同步逻辑中不插入 await。
+    const applyRoomSongOperation = (
+        roomId: string,
+        allSongLists: SongLists,
+        baseIdArray: string[],
+        laterOps: OpLog[],
+        currentOp: OpLog
+    ) => {
+        const queued = songOperation([...allSongLists.queued], baseIdArray, laterOps, currentOp);
+        const finalSongLists = { ...allSongLists, queued };
+        const finalHash = getHash(finalSongLists);
+        const logs = roomOpCache[roomId] || [];
+        logs.push(currentOp);
+        if (logs.length > 50) logs.shift();
+        roomSongsCache[roomId] = finalSongLists;
+        roomOpCache[roomId] = logs;
+        return { finalSongLists, finalHash };
     };
 
     // WebSocket 路由：处理连接与房间加入
@@ -210,6 +264,9 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         ctx.websocket.on('close', (code: string, reason: string) => console.log('Closed with:', code, reason));
     });
 
+    // rid中间件
+    const ridMiddleware = createRidMiddleware(storage, RID_EXPIRED_TIME);
+    router.use(ridMiddleware);
 
     // 创建房间：已存在则拒绝，防止两拨人用同一房间号串房
     router.post('/api/createRoom', async (koaCtx) => {
@@ -368,6 +425,10 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (!currentQueue?.length) {
             // 队列为空：如果有正在唱的歌，把它放到已唱（避免重复）并清空 singing
             if (currentSongLists.singing) {
+                // 旧请求可能刚把最后一首切上来，不能再次用它结束这首歌
+                if (idArrayHash !== getHash(currentSongLists)) {
+                    return koaCtx.body = { success: false, code: 'REJECT' };
+                }
                 if (!currentSongLists.sung.length || currentSongLists.sung[currentSongLists.sung.length - 1].id !== currentSongLists.singing.id) {
                     currentSongLists.sung.push(currentSongLists.singing);
                 }
@@ -452,23 +513,12 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (currentSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
         const currentQueue = currentSongLists.queued;
 
-        const serverHash = getHash(currentSongLists);
-        const nowIdArray = currentQueue.map(s => s.id);
-        const logs = roomOpCache[roomId] || [];
-        const latest = idArrayHash === serverHash;
-        let hitIdx = -1;
-        if (!latest) {
-            for (let i = logs.length - 1; i >= 0; i--) {
-                if (logs[i].baseHash === idArrayHash) {
-                    hitIdx = i;
-                    break;
-                }
-            }
-            if (hitIdx === -1) return koaCtx.body = { success: false, code: 'REJECT' };
+        // 上一首按当前播放状态执行，拒绝旧请求，避免重复回退。
+        if (idArrayHash !== getHash(currentSongLists)) {
+            return koaCtx.body = { success: false, code: 'REJECT' };
         }
-
-        const baseIdArray = latest ? nowIdArray : [...logs[hitIdx].baseIdArray];
-        const laterOps = latest ? [] : [...logs.slice(hitIdx)];
+        const baseIdArray = currentQueue.map(s => s.id);
+        const logs = roomOpCache[roomId] || [];
 
         if (!currentSongLists.sung?.length) {
             if (currentSongLists.singing) {
@@ -481,7 +531,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
                     toIndex: 0,
                     timestamp: Date.now()
                 };
-                const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, laterOps, currentOp);
+                const finalQueuedSongs = songOperation([...currentQueue], baseIdArray, [], currentOp);
                 logs.push(currentOp);
                 if (logs.length > 50) logs.shift();
                 roomOpCache[roomId] = logs;
@@ -522,7 +572,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         } : null;
 
         try {
-            const finalQueuedSongs = currentOp ? songOperation([...currentQueue], baseIdArray, laterOps, currentOp) : [...currentQueue];
+            const finalQueuedSongs = currentOp ? songOperation([...currentQueue], baseIdArray, [], currentOp) : [...currentQueue];
             if (currentOp) {
                 logs.push(currentOp);
                 if (logs.length > 50) logs.shift();
@@ -827,6 +877,46 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         }
     });
 
+    // 添加歌曲：追加到当前队尾，不依赖客户端 Hash 或位置。
+    router.post('/api/addSong', async (koaCtx) => {
+        const { roomId: roomIds } = koaCtx.query;
+        const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) {
+            return koaCtx.body = { success: false, msg: roomIdError };
+        }
+        const { song } = (koaCtx.request.body || {}) as AddSongBody;
+
+        const songError = await prepareSong(song);
+        if (songError) return koaCtx.body = { success: false, msg: songError };
+
+        // 确保房间存在，防止对不存在的房间写入数据
+        const loadedSongLists = await ensureRoom(roomId);
+        if (loadedSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
+        // await 恢复后取当前内存版本，后续计算和发布在同一同步执行段完成。
+        const allSongLists = roomSongsCache[roomId] || loadedSongLists;
+        // 重复歌曲 ID 不改动已存在条目，也不把已唱歌曲重新移回队列。
+        const existingSong = [...allSongLists.queued, ...allSongLists.sung, allSongLists.singing]
+            .find(item => item?.id === song.id);
+        if (existingSong) {
+            koaCtx.body = { success: true, hash: getHash(allSongLists), song: existingSong };
+            return;
+        }
+        const currentOp: OpLog = {
+            baseIdArray: allSongLists.queued.map(item => item.id),
+            baseHash: getHash(allSongLists),
+            song,
+            toIndex: allSongLists.queued.length,
+            timestamp: Date.now()
+        };
+        const { finalSongLists, finalHash } = applyRoomSongOperation(
+            roomId, allSongLists, currentOp.baseIdArray, [], currentOp
+        );
+        await persistRoom(roomId, finalSongLists);
+        koaCtx.body = { success: true, hash: finalHash, song };
+        notifyUpdate(roomId, finalHash);
+    });
+
     // Move/Add/Delete 逻辑
     router.post('/api/songOperation', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;
@@ -840,34 +930,14 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         const { idArrayHash, song, toIndex } = body;
         ktvLogger.debug('post:', roomId, 'base on', idArrayHash, 'put', song?.id, 'to', toIndex);
 
-        // 链接归一化：非 http/https/bilibili 开头自动补 https://；纯 BV/av 号转成 B 站视频链接
-        if (song && typeof song.url === 'string') {
-            song.url = normalizeSongUrl(song.url);
-        }
-
-        // 歌曲字段校验（解析前拦截非法数据，也避免非字符串 url 触发后续解析报错）
-        const songError = validateSong(song);
+        const songError = await prepareSong(song);
         if (songError) return koaCtx.body = { success: false, msg: songError };
 
-        // 如果是 B 站链接
-        if (song && song.url && !song.url.startsWith('bilibili://') && (isBilibiliUrl(song.url) || song.url.match(/BV[a-zA-Z0-9]{10}/i))) {
-            const biliData = await resolveBilibiliData(song.url);
-            if (biliData) {
-                // 更新 URL
-                song.url = biliData.url;
-                if (!song.title) {
-                    song.title = `${song.title}${biliData.pNum ? `(p${biliData.pNum})` : ''}`;
-                }
-            }
-        }
-
-        // 解析后再次校验（B站解析可能改写 url / 追加分P到标题）
-        const finalSongError = validateSong(song);
-        if (finalSongError) return koaCtx.body = { success: false, msg: finalSongError };
-
         // 确保房间存在，防止对不存在的房间写入数据
-        const allSongLists = await ensureRoom(roomId);
-        if (allSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
+        const loadedSongLists = await ensureRoom(roomId);
+        if (loadedSongLists === null) return koaCtx.body = { success: false, msg: '房间不存在' };
+        // await 恢复后取当前内存版本，后续计算和发布在同一同步执行段完成。
+        const allSongLists = roomSongsCache[roomId] || loadedSongLists;
         const queueSongList = [...allSongLists.queued];
         const serverHash = getHash(allSongLists);
         const alreadyHad = allSongLists.queued.some(s => s.id === song.id)
@@ -912,17 +982,11 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
 
         try {
-            // 执行重演逻辑
-            const tempSongList = songOperation(queueSongList, baseIdArray, laterOps, currentOp);
-            const finalSongLists = { ...allSongLists, queued: tempSongList };
-            const finalHash = getHash(finalSongLists);
+            // 执行重演逻辑，与新添加接口共用日志记录和内存更新。
+            const { finalSongLists, finalHash } = applyRoomSongOperation(
+                roomId, allSongLists, baseIdArray, laterOps, currentOp
+            );
             ktvLogger.debug('new hash:', finalHash);
-            logs.push(currentOp);
-
-            if (logs.length > 50) logs.shift();
-
-            roomSongsCache[roomId] = finalSongLists;
-            roomOpCache[roomId] = logs;
             await persistRoom(roomId, finalSongLists);
             koaCtx.body = { success: true, hash: finalHash, song };
             notifyUpdate(roomId, finalHash)
@@ -933,6 +997,13 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             ktvLogger.debug('REJECT')
         }
     });
+
+/*     router.get('/test',async (koaCtx)=>{
+        console.log(koaCtx.header)
+        if(koaCtx.header["request-id"]==='111')
+            koaCtx.body = { success: true, rid: true }
+        else koaCtx.body = { success: true }
+    }) */
 
     app.ws.use(wsRouter.routes() as any);
     app.use(router.routes()).use(router.allowedMethods());
