@@ -1,6 +1,6 @@
 <template>
     <transition name="toast-fade">
-        <div v-if="message" class="toast">
+        <div v-if="message" class="toast" :class="{ 'toast-success': type === 'success' }">
             {{ message }}
         </div>
     </transition>
@@ -8,7 +8,8 @@
 
 <script setup>
 defineProps({
-    message: { type: String, default: '' }
+    message: { type: String, default: '' },
+    type: { type: String, default: 'error' }
 });
 </script>
 
@@ -19,6 +20,10 @@ defineProps({
     @apply fixed top-4 left-1/2 -translate-x-1/2 z-[300] px-4 py-2 rounded-xl text-white text-sm font-bold shadow-lg whitespace-nowrap;
     /* 跟随主题可配置的危险色 */
     background-color: var(--danger-color);
+}
+
+.toast-success {
+    background-color: #16a34a;
 }
 
 /* toast 过渡：只动 Y 轴，X 轴居中交给 Tailwind 的 translate 属性，避免横向漂移 */

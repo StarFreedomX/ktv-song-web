@@ -125,7 +125,6 @@ const isRefreshing = ref(false);
 const updateStatus = ref(UpdateStatus.IDLE);
 const allowUpdate = computed(() => !isDragging.value && !isRefreshing.value);
 
-let addAttempt = null;
 let songStateVersion = 0;
 
 // 工具函数
@@ -154,11 +153,13 @@ const showTransientStatus = (status, delay = 1000) => {
     }, delay);
 };
 
-// 全局操作失败提示（toast）：展示后端返回的错误原因
+// 全局操作提示
 const toastMsg = ref('');
+const toastType = ref('error');
 let toastTimer = null;
-const showToast = (msg) => {
+const showToast = (msg, type = 'error') => {
     toastMsg.value = msg;
+    toastType.value = type;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { toastMsg.value = ''; }, 2500);
 };
@@ -221,12 +222,6 @@ watch(showAddModal, (visible) => {
         isAddingToFavorites.value = false;
     }
 });
-
-// 关闭/重开窗口或修改输入后，即使又改回原内容，也属于新的一次提交。
-watch([
-    showAddModal, showBiliSearchModal, roomId,
-    () => form.value.title, () => form.value.url, () => cfg.value.nickname
-], () => { addAttempt = null; }, { flush: 'sync' });
 
 // 监听正在播放歌曲的变化
 watch(() => singing.value, (newSong, oldSong) => {
@@ -419,19 +414,21 @@ const commitOp = async (opData) => {
 const handleAdd = async () => {
     if (!form.value.title || !form.value.url) return;
     if (isAddingToFavorites.value) {
-        // 如果是添加收藏逻辑
-        const newFav = {
-            id: Date.now(),
-            title: form.value.title || '未命名歌曲',
-            url: await parseBilibiliShortLink(form.value.url)
-        };
-        // 检查是否已存在
-        if (!favorites.value.some(f => f.url === newFav.url)) {
-            favorites.value.push(newFav);
-        }
+        const { title, url } = form.value;
         resetAddSongState();
+        try {
+            const newFav = { id: Date.now(), title, url: await parseBilibiliShortLink(url) };
+            if (favorites.value.some(f => f.url === newFav.url)) {
+                showToast('已在收藏中', 'success');
+            } else {
+                favorites.value.push(newFav);
+                showToast('收藏成功', 'success');
+            }
+        } catch (e) {
+            console.error('Add Favorite Error:', e);
+            showToast('收藏失败，请重试');
+        }
     } else {
-        // 原有的添加待唱列表逻辑
         await add();
     }
 };
@@ -475,17 +472,14 @@ const enqueueSong = async ({ title, url, onSuccess }) => {
     const rawUrl = (url || '').trim();
     if (!title || !rawUrl) return false;
     const content = { title, url: rawUrl, addedBy: cfg.value.nickname };
-    const key = JSON.stringify([roomId.value, content]);
-    if (!addAttempt || addAttempt.key !== key) {
-        addAttempt = {
-            key,
-            roomId: roomId.value,
-            rid: createUUId(),
-            song: { id: createUUId(), ...content }
-        };
-    }
-    const attempt = addAttempt;
+    const attempt = {
+        roomId: roomId.value,
+        rid: createUUId(),
+        song: { id: createUUId(), ...content }
+    };
     const expectedVersion = songStateVersion;
+    showBiliSearchModal.value = false;
+    resetAddSongState();
     try {
         const response = await fetch(`${addSongUrl}?roomId=${encodeURIComponent(attempt.roomId)}`, {
             method: 'POST',
@@ -501,23 +495,22 @@ const enqueueSong = async ({ title, url, onSuccess }) => {
             // 包括 duplicated、业务拒绝及无法解析的响应，均校验当前歌单。
             if (!applied && !syncDisposed) requestSync();
         }
-        if (!response.ok || !data.success) {
-            if (addAttempt === attempt && data.msg) showToast(data.msg);
+        if (!response.ok || !data?.success) {
+            if (!syncDisposed) showToast(data?.msg || '添加失败，请重试');
             return false;
         }
-        // 响应可以乱序到达，但旧请求不能清空新窗口/新输入。
-        if (addAttempt === attempt && !syncDisposed) {
-            if (typeof onSuccess === 'function') await onSuccess();
-            if (addAttempt === attempt && !syncDisposed) {
-                addAttempt = null;
-                showBiliSearchModal.value = false;
-                resetAddSongState();
+        if (!syncDisposed) showToast('添加成功', 'success');
+        if (typeof onSuccess === 'function') {
+            try {
+                await onSuccess();
+            } catch (e) {
+                console.error('Track Bilibili Selection Error:', e);
             }
         }
         return true;
     } catch (e) {
         console.error('Add Song Error:', e);
-        if (addAttempt === attempt && !syncDisposed) showToast('添加结果未确认，请重试');
+        if (!syncDisposed) showToast('添加结果未确认，请重试');
         return false;
     }
 };
@@ -1522,8 +1515,8 @@ onUnmounted(() => {
         @confirm="shuffleSongs"
     />
 
-    <!-- 全局操作失败提示 -->
-    <Toast :message="toastMsg" />
+    <!-- 全局操作提示 -->
+    <Toast :message="toastMsg" :type="toastType" />
 
     <!--    底部导航栏       -->
     <BottomNav
