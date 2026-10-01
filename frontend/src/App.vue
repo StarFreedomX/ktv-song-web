@@ -12,10 +12,13 @@ import AddSongModal from "./modals/AddSongModal.vue";
 import BilibiliSearchModal from "./modals/BilibiliSearchModal.vue";
 import NicknameModal from "./modals/NicknameModal.vue";
 import BottomNav from "./modals/BottomNav.vue";
+import FloatingSongActions from "./modals/FloatingSongActions.vue";
 import QueueList from "./modals/QueueList.vue";
 import HistoryList from "./modals/HistoryList.vue";
 import ComfirmButton from "./modals/components/ComfirmButton.vue";
 import Toast from "./components/Toast.vue";
+import LibraryBigIcon from './components/icons/LibraryBigIcon.vue';
+import RemoteControlIcon from './components/icons/RemoteControlIcon.vue';
 import { rememberRoom } from './roomHistory';
 
 // 扩展详细状态定义
@@ -84,6 +87,7 @@ const wsUrl = `${protocol}//${window.location.host}/api/ws?roomId=${roomId.value
 // 控制页面元素的变量
 /** @type {import('vue').Ref<String>} */
 const activeTab = ref(localStorage.getItem('ktv_active_tab') || 'queue');
+const activePage = ref('control');
 const isDragging = ref(false);
 const deletingSong = ref(null);
 const editingSong = ref(null);
@@ -1297,6 +1301,7 @@ onUnmounted(() => {
         </div>
     </div>
 
+    <section v-show="activePage === 'control'" aria-label="歌单控制">
     <header class="mb-6">
         <div class="flex justify-between items-start">
             <h1 @click="backHome()" class="brand-title cursor-pointer">KTV<br/>Queue</h1>
@@ -1470,6 +1475,17 @@ onUnmounted(() => {
         @re-add="reAdd"
     />
 
+    </section>
+
+    <section v-if="activePage !== 'control'" class="page-placeholder" :aria-label="activePage === 'library' ? '歌曲库' : '投屏遥控'">
+        <div class="placeholder-icon" aria-hidden="true">
+            <LibraryBigIcon v-if="activePage === 'library'" width="36" height="36" />
+            <RemoteControlIcon v-else width="36" height="36" />
+        </div>
+        <h2>{{ activePage === 'library' ? '歌曲库' : '投屏 App 遥控器' }}</h2>
+        <p>暂未实现</p>
+    </section>
+
     <NicknameModal
         v-model="showNicknameModal"
         v-model:tempNickname="tempNickname"
@@ -1548,22 +1564,22 @@ onUnmounted(() => {
     <!-- 全局操作提示 -->
     <Toast :message="toastMsg" :type="toastType" />
 
-    <!--    底部导航栏       -->
-    <BottomNav
+    <FloatingSongActions
+        v-if="activePage === 'control'"
         :is-refreshing="isRefreshing"
         :history-empty="historyList.length === 0"
         :queue-empty="queueList.length === 0"
         :singing-empty="!singing"
         @refresh="handleRefresh"
-        @undo="undoSung"
         @add="showAddModal = true"
         @prev="prevSong"
         @next="nextSong"
         @shuffle="showShuffleConfirm = true"
     />
 
+    <BottomNav v-model="activePage" />
 
-    <div class="h-24"></div>
+    <div class="bottom-controls-spacer" aria-hidden="true"></div>
     </div>
 </template>
 <style>
@@ -1589,6 +1605,30 @@ onUnmounted(() => {
 </style>
 <style scoped>
 @reference "tailwindcss";
+
+.bottom-controls-spacer {
+    height: calc(180px + env(safe-area-inset-bottom, 0px));
+}
+
+.page-placeholder {
+    @apply flex flex-col items-center justify-center gap-3 text-center;
+    min-height: calc(100dvh - 212px - env(safe-area-inset-bottom, 0px));
+}
+
+.placeholder-icon {
+    @apply w-20 h-20 rounded-3xl border flex items-center justify-center mb-2;
+    color: var(--brand-color);
+    background-color: var(--brand-color-lighter);
+    border-color: var(--brand-color-light);
+}
+
+.page-placeholder h2 {
+    @apply text-xl font-black text-slate-700;
+}
+
+.page-placeholder p {
+    @apply text-sm text-slate-400;
+}
 
 /* 2. 基础文字样式 */
 .brand-title {
