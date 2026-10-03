@@ -18,7 +18,7 @@ import HistoryList from "./modals/HistoryList.vue";
 import ComfirmButton from "./modals/components/ComfirmButton.vue";
 import Toast from "./components/Toast.vue";
 import LibraryBigIcon from './components/icons/LibraryBigIcon.vue';
-import RemoteControlIcon from './components/icons/RemoteControlIcon.vue';
+import RemoteControlPage from './components/RemoteControlPage.vue';
 import { rememberRoom } from './roomHistory';
 
 // 扩展详细状态定义
@@ -1477,12 +1477,13 @@ onUnmounted(() => {
 
     </section>
 
-    <section v-if="activePage !== 'control'" class="page-placeholder" :aria-label="activePage === 'library' ? '歌曲库' : '投屏遥控'">
+    <RemoteControlPage v-show="activePage === 'remote'" :song="singing" />
+
+    <section v-if="activePage === 'library'" class="page-placeholder" aria-label="歌曲库">
         <div class="placeholder-icon" aria-hidden="true">
-            <LibraryBigIcon v-if="activePage === 'library'" width="36" height="36" />
-            <RemoteControlIcon v-else width="36" height="36" />
+            <LibraryBigIcon width="36" height="36" />
         </div>
-        <h2>{{ activePage === 'library' ? '歌曲库' : '投屏 App 遥控器' }}</h2>
+        <h2>歌曲库</h2>
         <p>暂未实现</p>
     </section>
 
@@ -1579,7 +1580,7 @@ onUnmounted(() => {
 
     <BottomNav v-model="activePage" />
 
-    <div class="bottom-controls-spacer" aria-hidden="true"></div>
+    <div class="bottom-controls-spacer" :class="{ 'bottom-controls-spacer-compact': activePage !== 'control' }" aria-hidden="true"></div>
     </div>
 </template>
 <style>
@@ -1608,6 +1609,10 @@ onUnmounted(() => {
 
 .bottom-controls-spacer {
     height: calc(180px + env(safe-area-inset-bottom, 0px));
+}
+
+.bottom-controls-spacer-compact {
+    height: calc(88px + env(safe-area-inset-bottom, 0px));
 }
 
 .page-placeholder {
