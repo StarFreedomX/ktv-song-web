@@ -23,7 +23,7 @@ const props = defineProps({
         ]
     }
 });
-const emit = defineEmits(['refresh-apps']);
+const emit = defineEmits(['refresh-apps', 'previous', 'next']);
 
 const REMOTE_APP_STORAGE_KEY = 'ktv_remote_app';
 
@@ -78,7 +78,7 @@ watch(() => props.playback, (state) => {
     quality.value = state.quality ?? '';
 }, { immediate: true, deep: true });
 
-// Remote commands are placeholders until the App control channel is available.
+// Previous/next change the room queue; other controls await the App command channel.
 function selectApp(appId) {
     if (!appId) return;
     preferredAppId.value = appId;
@@ -86,9 +86,9 @@ function selectApp(appId) {
     savePreferredApp(props.roomId, appId);
 }
 function refreshApps() { emit('refresh-apps'); }
-function previousSong() {}
+function previousSong() { emit('previous'); }
 function togglePlayback() {}
-function nextSong() {}
+function nextSong() { emit('next'); }
 function recastCurrentSong() {}
 function seekTo(seconds) {}
 function setVolume(value) {}

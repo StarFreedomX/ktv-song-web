@@ -777,43 +777,44 @@ const undoSung = async (song) => {
     }
 };
 
-const nextSong = async () => {
-    try {
-        const res = await fetch(`${nextSongUrl}?roomId=${roomId.value}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-                idArrayHash: lastHash.value
-            })
-        }).then(r => r.json());
+let songSwitchPending = false;
 
+const switchSong = async (url) => {
+    if (songSwitchPending || syncDisposed || roomNotFound.value) return false;
+    songSwitchPending = true;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch(`${url}?roomId=${encodeURIComponent(roomId.value ?? '')}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ idArrayHash: lastHash.value }),
+            signal: controller.signal,
+        });
+        const res = await response.json().catch(() => null);
+        if (!response.ok || !res) throw new Error('切歌失败');
         if (res.code === 'REJECT') {
             lastHash.value = EMPTY_HASH;
+        } else if (res.success === false && res.msg && !syncDisposed) {
+            showToast(res.msg);
         }
-        // 若成功或拒绝都触发拉取以同步最新状态
+        // 成功或拒绝都拉一次，拿到服务端最新状态。
         requestSync();
-
-    } catch (e) {
-        console.error("Next Song Error:", e);
+        return res.success === true;
+    } catch (error) {
+        if (!syncDisposed) {
+            showToast(error.name === 'AbortError' ? '切歌超时，请重试' : '切歌失败，请重试');
+        }
         requestSync();
+        return false;
+    } finally {
+        clearTimeout(timeout);
+        songSwitchPending = false;
     }
 };
 
-const prevSong = async () => {
-    try {
-        const res = await fetch(`${prevSongUrl}?roomId=${roomId.value}`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-                idArrayHash: lastHash.value
-            })
-        }).then(r => r.json());
-
-        if (res.code === 'REJECT') {
-            lastHash.value = EMPTY_HASH;
-        }
-        requestSync();
-    } catch (e) {
-        console.error("Prev Song Error:", e);
-        requestSync();
-    }
-};
+const nextSong = () => switchSong(nextSongUrl);
+const prevSong = () => switchSong(prevSongUrl);
 
 async function shuffleSongs() {
     showShuffleConfirm.value = false;
@@ -1489,7 +1490,8 @@ onUnmounted(() => {
     </section>
 
     <RemoteControlPage v-show="activePage === 'remote'" :song="singing" :apps="remoteApps" :room-id="roomId || ''"
-                       :apps-error="remoteAppsError" @refresh-apps="refreshRemoteApps" />
+                       :apps-error="remoteAppsError" @previous="prevSong" @next="nextSong"
+                       @refresh-apps="refreshRemoteApps" />
 
     <section v-if="activePage === 'library'" class="page-placeholder" aria-label="歌曲库">
         <div class="placeholder-icon" aria-hidden="true">
