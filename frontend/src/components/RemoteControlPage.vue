@@ -8,7 +8,9 @@ import '../styles/remote-control.css';
 
 const props = defineProps({
     song: { type: Object, default: null },
+    roomId: { type: String, default: '' },
     apps: { type: Array, default: () => [] },
+    appsError: { type: String, default: '' },
     playback: { type: Object, default: () => ({}) },
     qualityOptions: {
         type: Array,
@@ -21,15 +23,55 @@ const props = defineProps({
         ]
     }
 });
+const emit = defineEmits(['refresh-apps']);
+
+const REMOTE_APP_STORAGE_KEY = 'ktv_remote_app';
 
 const selectedAppId = defineModel('appId', { type: String, default: '' });
+// Explicit choice stays separate from the fallback shown while that app is offline.
+const preferredAppId = ref('');
 const volume = ref(null);
 const danmaku = ref(false);
 const quality = ref('');
 
-watch(() => props.apps, (apps) => {
-    if (!apps.some(app => app.id === selectedAppId.value)) selectedAppId.value = apps[0]?.id ?? '';
-}, { immediate: true, deep: true });
+function readPreferredApp(roomId) {
+    if (!roomId) return '';
+    try {
+        const saved = JSON.parse(sessionStorage.getItem(REMOTE_APP_STORAGE_KEY) || 'null');
+        if (!saved || saved.roomId !== roomId || typeof saved.appId !== 'string' || !saved.appId) return '';
+        return saved.appId;
+    } catch {
+        return '';
+    }
+}
+
+function savePreferredApp(roomId, appId) {
+    if (!roomId || !appId) return;
+    try {
+        sessionStorage.setItem(REMOTE_APP_STORAGE_KEY, JSON.stringify({ roomId, appId }));
+    } catch {
+        // Keep the in-memory selection when storage is unavailable.
+    }
+}
+
+function syncSelection() {
+    const apps = props.apps;
+    const preferred = preferredAppId.value;
+    if (preferred && apps.some(app => app.id === preferred)) {
+        selectedAppId.value = preferred;
+        return;
+    }
+    if (!apps.some(app => app.id === selectedAppId.value)) {
+        selectedAppId.value = apps[0]?.id ?? '';
+    }
+}
+
+watch(() => props.roomId, (roomId) => {
+    preferredAppId.value = readPreferredApp(roomId);
+    selectedAppId.value = '';
+}, { immediate: true });
+
+watch(() => props.apps, syncSelection, { immediate: true, deep: true });
 watch(() => props.playback, (state) => {
     volume.value = state.volume ?? null;
     danmaku.value = state.danmaku ?? false;
@@ -37,8 +79,13 @@ watch(() => props.playback, (state) => {
 }, { immediate: true, deep: true });
 
 // Remote commands are placeholders until the App control channel is available.
-function selectApp(appId) {}
-function refreshApps() {}
+function selectApp(appId) {
+    if (!appId) return;
+    preferredAppId.value = appId;
+    selectedAppId.value = appId;
+    savePreferredApp(props.roomId, appId);
+}
+function refreshApps() { emit('refresh-apps'); }
 function previousSong() {}
 function togglePlayback() {}
 function nextSong() {}
@@ -54,7 +101,7 @@ function setQuality(value) {}
 <template>
     <section class="remote-page" aria-label="投屏遥控">
         <header class="remote-page-header"><h1>投屏遥控</h1></header>
-        <RemoteAppSelect v-model="selectedAppId" :apps="apps" @select="selectApp" @refresh="refreshApps" />
+        <RemoteAppSelect v-model="selectedAppId" :apps="apps" :error="appsError" @select="selectApp" @refresh="refreshApps" />
         <div class="remote-control-stack">
             <RemotePlayback :song="song" :position="playback.position" :duration="playback.duration"
                             :is-playing="playback.isPlaying ?? true"

@@ -5,7 +5,8 @@ import RefreshIcon from '../icons/RefreshIcon.vue';
 
 const props = defineProps({
     modelValue: { type: String, default: '' },
-    apps: { type: Array, default: () => [] }
+    apps: { type: Array, default: () => [] },
+    error: { type: String, default: '' }
 });
 const emit = defineEmits(['update:modelValue', 'select', 'refresh']);
 const dialog = ref(null);
@@ -61,7 +62,8 @@ function finishRefreshAnimation(event) {
                 <button v-for="app in apps" :key="app.id" type="button" class="remote-app-option"
                         :class="{ 'is-selected': app.id === modelValue }" :aria-pressed="app.id === modelValue"
                         @click="selectApp(app.id)">{{ app.name }}</button>
-                <p v-if="!apps.length" class="remote-app-empty">暂无在线 App</p>
+                <p v-if="error" class="remote-app-error" role="alert">{{ error }}</p>
+                <p v-else-if="!apps.length" class="remote-app-empty">暂无在线 App</p>
             </div>
             <button type="button" class="remote-dialog-cancel" @click="dialog.close()">取消</button>
         </dialog>

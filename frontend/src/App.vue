@@ -20,6 +20,7 @@ import Toast from "./components/Toast.vue";
 import LibraryBigIcon from './components/icons/LibraryBigIcon.vue';
 import RemoteControlPage from './components/RemoteControlPage.vue';
 import { rememberRoom } from './roomHistory';
+import { useRemoteApps } from './composables/useRemoteApps';
 
 // 扩展详细状态定义
 const SyncStatus = Object.freeze({
@@ -104,6 +105,11 @@ const roomNotFound = ref(false);
 const createRoomLoading = ref(false);
 const createRoomError = ref('');
 const serviceError = ref('');
+const { apps: remoteApps, error: remoteAppsError, refresh: refreshRemoteApps } = useRemoteApps(
+    roomId,
+    computed(() => activePage.value === 'remote' && !roomNotFound.value),
+    computed(() => !cfg.value.wsMode)
+);
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -1068,6 +1074,7 @@ const requestRecoverySync = () => {
         recoverySyncTimer = null;
         if (syncDisposed || roomNotFound.value) return;
         requestSync();
+        refreshRemoteApps();
     }, 100);
 };
 
@@ -1141,6 +1148,10 @@ const initWebSocket = () => {
             if (data.type === 'pong') {
                 clearTimeout(pongTimer);
                 pongTimer = null;
+                return;
+            }
+            if (data.type === 'REMOTE_APPS') {
+                refreshRemoteApps();
                 return;
             }
             // 请求期间保留通知，即使 Hash 等于当前本地值，返回中的快照也可能不同。
@@ -1477,7 +1488,8 @@ onUnmounted(() => {
 
     </section>
 
-    <RemoteControlPage v-show="activePage === 'remote'" :song="singing" />
+    <RemoteControlPage v-show="activePage === 'remote'" :song="singing" :apps="remoteApps" :room-id="roomId || ''"
+                       :apps-error="remoteAppsError" @refresh-apps="refreshRemoteApps" />
 
     <section v-if="activePage === 'library'" class="page-placeholder" aria-label="歌曲库">
         <div class="placeholder-icon" aria-hidden="true">

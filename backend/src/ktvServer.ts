@@ -13,6 +13,7 @@ import { fetchBilibiliVideoParts, filterBilibiliSearchVideosByRelevance, filterC
 import { AddSongBody, BilibiliSearchVideo, DATABASE_NAME, IdentifiedWebSocket, OpLog, SEARCH_CACHE_NAMESPACE, SEARCH_CATALOG_NAMESPACE, SEARCH_CLICK_NAMESPACE, Song, SongLists, SongOperationBody, WsReadyState } from "@/types";
 import { normalizeSongUrl, validateRoomId, validateSong } from "@/validation";
 import { createRidMiddleware } from "./middleware";
+import { RemoteApps } from './remoteApps';
 
 const DURATION_MULTIPLIERS = {
     ms: 1,
@@ -143,10 +144,17 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     (app as any).closeAll = () => {
         clearInterval(cacheCleanupTimer);
+        remoteApps.close();
     };
 
     // 存储房间 ID 与客户端集合的映射
     const roomClients = new Map<string, Set<IdentifiedWebSocket>>();
+    const remoteApps = new RemoteApps(roomId => {
+        const message = JSON.stringify({ type: 'REMOTE_APPS' });
+        roomClients.get(roomId)?.forEach(ws => {
+            if (ws.readyState === WsReadyState.OPEN) ws.send(message);
+        });
+    });
     // 封装广播通知函数
     const notifyUpdate = (roomId: string, hash: string) => {
         const clients = roomClients.get(roomId);
@@ -234,6 +242,11 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     // WebSocket 路由：处理连接与房间加入
     const wsRouter = new Router();
+    wsRouter.all('/api/remote/ws', (ctx) => {
+        const roomId = Array.isArray(ctx.query.roomId) ? ctx.query.roomId[0] : ctx.query.roomId;
+        if (!roomId || validateRoomId(roomId)) return ctx.websocket.close(1008, 'Invalid roomId');
+        remoteApps.connect(roomId, ctx.websocket, async () => (await ensureRoom(roomId)) !== null);
+    });
     wsRouter.all('/api/ws', async (ctx) => {
         const { roomId: roomIds } = ctx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
@@ -267,6 +280,23 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
     // rid中间件
     const ridMiddleware = createRidMiddleware(storage, RID_EXPIRED_TIME);
     router.use(ridMiddleware);
+
+    router.get('/api/remote/state', async (ctx) => {
+        ctx.set('Cache-Control', 'no-store');
+        const roomId = Array.isArray(ctx.query.roomId) ? ctx.query.roomId[0] : ctx.query.roomId;
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) {
+            ctx.status = 400;
+            ctx.body = { success: false, msg: roomIdError };
+            return;
+        }
+        if (!await ensureRoom(roomId)) {
+            ctx.status = 404;
+            ctx.body = { success: false, msg: '房间不存在' };
+            return;
+        }
+        ctx.body = { success: true, apps: remoteApps.list(roomId) };
+    });
 
     // 创建房间：已存在则拒绝，防止两拨人用同一房间号串房
     router.post('/api/createRoom', async (koaCtx) => {
@@ -1047,6 +1077,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         app,
         close: () => {
             clearInterval(cacheCleanupTimer);
+            remoteApps.close();
         }
     };
 }

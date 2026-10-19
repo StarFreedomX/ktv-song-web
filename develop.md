@@ -6,6 +6,67 @@
 
 WebSocket 每 20 秒发送一次 ping，10 秒内未收到 pong 时关闭旧连接，并在 3 秒后重连；重连成功后补拉歌单。断线、切换同步模式和退出房间时清理心跳及超时定时器，旧连接的回调不会影响新连接。
 
+## 投屏 App 注册
+
+当前只实现在线列表、网页选择和刷新。Android App 尚未接入，播放状态和控制命令留待后续实现。
+
+### 注册连接
+
+App 连接 `WS /api/remote/ws?roomId=...`（HTTPS 部署使用 WSS），在 10 秒内发送一次注册消息：
+
+```json
+{
+  "v": 1,
+  "type": "register",
+  "appId": "phone-abc",
+  "name": "客厅手机",
+  "target": { "name": "客厅电视", "mode": "bilibili" }
+}
+```
+
+- 房间必须已经存在，连接不创建房间，也不延长歌单有效期。
+- `appId` 是 App 本地保存的安装标识，与房间存档 UUID 独立；允许字母、数字、下划线、连字符，长度 1–128。
+- `name`、`target.name` 去除首尾空白后长度为 1–80；`target.mode` 为 `dlna` 或 `bilibili`。电视由 App 选择，这里只上报名称和模式。
+- 每个连接只注册一次。重连或切换目标时新建连接并重新注册；同一房间的同一 `appId` 替换旧会话，关闭旧连接。
+- 注册成功后返回 `{"v":1,"type":"registered","appId":"phone-abc","sessionId":"..."}`。每次注册生成新的 `sessionId`。
+- 注册失败返回 `{"v":1,"type":"error","code":"...","msg":"..."}` 后关闭连接；错误码包括 `INVALID_MESSAGE`、`INVALID_REGISTER`、`REGISTER_TIMEOUT`、`ALREADY_REGISTERED`、`ROOM_NOT_FOUND`、`SERVICE_UNAVAILABLE`。
+- 后台每 20 秒发送 WebSocket Ping 控制帧，10 秒内没有 Pong 控制帧则断开。客户端需支持协议层 Ping/Pong；另支持 JSON `{"type":"ping"}` / `{"v":1,"type":"pong"}`。
+- 注册消息最多 16 KiB，使用文本 JSON；二进制消息会被拒绝。
+
+### 在线列表
+
+`GET /api/remote/state?roomId=...` 返回：
+
+```json
+{
+  "success": true,
+  "apps": [
+    {
+      "appId": "phone-abc",
+      "sessionId": "...",
+      "name": "客厅手机",
+      "target": { "name": "客厅电视", "mode": "bilibili" }
+    }
+  ]
+}
+```
+
+没有在线 App 时 `apps` 为空数组；无效房间号返回 400，不存在的房间返回 404。响应禁用缓存。列表仅保存在后台进程内，不写 Redis 或存档；后台重启后由 App 重连恢复。
+
+列表变化时，已有 `/api/ws` 向同一房间发送 `{"type":"REMOTE_APPS"}` 通知，网页重新获取列表，不影响歌单 `UPDATE` 消息和 hash。网页进入遥控页、点击刷新、恢复到前台或 WS 重连时获取列表；HTTP 同步模式下，遥控页每 5 秒刷新一次。
+
+网页在当前标签页用 `sessionStorage` 记住选择的 App，并校验房间号；刷新后恢复，关闭标签页清除。首选 App 暂时离线时先回退显示；未被改选的情况下，重新上线后恢复。
+
+### 模拟客户端
+
+使用 Node.js 22 或更新版本，在仓库根目录运行；房间需先通过网页创建，无需安装依赖：
+
+```shell
+node scripts/mock-remote-app.mjs http://localhost:5526 demo phone-abc "客厅手机" "客厅电视" bilibili
+```
+
+参数依次为网站地址、房间号、App 标识、App 名称、电视名称、投屏模式。保持进程运行时 App 在线，Ctrl+C 断开。另开终端使用不同 App 标识可验证多设备选择；使用相同标识可验证会话替换。
+
 ## B站搜索 + Redis缓存
 
 - 前端：`添加新歌曲` 弹窗内输入关键词，调用后端 `/api/bilibiliSearch` 获取候选；选择后会调用 `/api/bilibiliSearch/select` 记录点击热度用于排序。
