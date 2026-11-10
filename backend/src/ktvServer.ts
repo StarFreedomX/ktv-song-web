@@ -149,11 +149,16 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     // 存储房间 ID 与客户端集合的映射
     const roomClients = new Map<string, Set<IdentifiedWebSocket>>();
-    const remoteApps = new RemoteApps(roomId => {
-        const message = JSON.stringify({ type: 'REMOTE_APPS' });
-        roomClients.get(roomId)?.forEach(ws => {
-            if (ws.readyState === WsReadyState.OPEN) ws.send(message);
-        });
+    const remoteApps = new RemoteApps({
+        notify: roomId => {
+            const message = JSON.stringify({ v: 1, type: 'remote:apps' });
+            roomClients.get(roomId)?.forEach(ws => {
+                // 执行端自身不收设备列表变更。
+                if (ws.readyState !== WsReadyState.OPEN || remoteApps.isRegistered(ws)) return;
+                ws.send(message);
+            });
+        },
+        checkRoom: async roomId => (await ensureRoom(roomId)) !== null,
     });
     // 封装广播通知函数
     const notifyUpdate = (roomId: string, hash: string) => {
@@ -240,13 +245,8 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         return { finalSongLists, finalHash };
     };
 
-    // WebSocket 路由：处理连接与房间加入
+    // WebSocket 路由：歌单广播与遥控共用一条连接
     const wsRouter = new Router();
-    wsRouter.all('/api/remote/ws', (ctx) => {
-        const roomId = Array.isArray(ctx.query.roomId) ? ctx.query.roomId[0] : ctx.query.roomId;
-        if (!roomId || validateRoomId(roomId)) return ctx.websocket.close(1008, 'Invalid roomId');
-        remoteApps.connect(roomId, ctx.websocket, async () => (await ensureRoom(roomId)) !== null);
-    });
     wsRouter.all('/api/ws', async (ctx) => {
         const { roomId: roomIds } = ctx.query;
         const roomId = Array.isArray(roomIds) ? roomIds.at(0) : roomIds;
@@ -262,16 +262,27 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         ctx.websocket.on('close', () => {
             clients.delete(ws);
             if (clients.size === 0) roomClients.delete(roomId);
+            remoteApps.unregister(roomId, ws);
             ktvLogger.info(`WS Leave: Room: ${roomId} | Client: ${clientId}`);
         });
-        ctx.websocket.on('message', (message: any) => {
+        ctx.websocket.on('message', (message: any, isBinary: boolean) => {
+            if (isBinary || (Buffer.isBuffer(message) && message.length > 16384)) {
+                return remoteApps.handleInvalidMessage(ws);
+            }
+            let data: any;
             try {
-                const data = JSON.parse(message.toString());
-                // 识别心跳消息
-                if (data.type === 'ping') {
-                    ws.send(JSON.stringify({ type: 'pong' }));
-                }
-            } catch (e) { }
+                data = JSON.parse(message.toString());
+            } catch {
+                return remoteApps.handleInvalidMessage(ws);
+            }
+            if (data?.type === 'ping') {
+                ws.send(JSON.stringify({ type: 'pong' }));
+                return;
+            }
+            // remote: 前缀的消息全部交给遥控模块。
+            if (typeof data?.type === 'string' && data.type.startsWith('remote:')) {
+                void remoteApps.handleMessage(roomId, ws, data);
+            }
         });
         ctx.websocket.on('error', (err: unknown) => console.error('WS Error Details:', err));
         ctx.websocket.on('close', (code: string, reason: string) => console.log('Closed with:', code, reason));
@@ -1042,7 +1053,7 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         if (!latest && (!baseLog?.baseIdArray || !Array.isArray(baseLog.baseIdArray))) {
             return koaCtx.body = { success: false, code: 'REJECT' };
         }
-        const baseIdArray = latest ? queueSongList.map(s => s.id) : [...baseLog.baseIdArray];
+        const baseIdArray = latest ? queueSongList.map(s => s.id) : [...(baseLog?.baseIdArray ?? [])];
         const laterOps = latest ? [] : [...logs.slice(hitIdx)];
 
         try {

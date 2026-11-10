@@ -1151,7 +1151,7 @@ const initWebSocket = () => {
                 pongTimer = null;
                 return;
             }
-            if (data.type === 'REMOTE_APPS') {
+            if (data.type === 'remote:apps') {
                 refreshRemoteApps();
                 return;
             }
