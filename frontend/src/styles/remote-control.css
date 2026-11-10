@@ -284,6 +284,16 @@
 .remote-transport-button:active {
     transform: scale(.9);
 }
+.remote-transport-button:disabled,
+.remote-recast-button:disabled,
+.remote-step-button:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+}
+.remote-transport-button:disabled:hover,
+.remote-recast-button:disabled:hover {
+    color: var(--text-sub);
+}
 .remote-volume .remote-panel-heading {
     justify-content: flex-start;
     gap: 8px;
@@ -431,6 +441,10 @@
     background: var(--brand-color-bg);
     font-size: 13px;
     font-weight: 700;
+}
+.remote-quality-select select:disabled {
+    opacity: .5;
+    cursor: not-allowed;
 }
 .remote-quality-select .remote-select-chevron {
     position: absolute;

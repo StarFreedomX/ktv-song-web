@@ -1062,6 +1062,24 @@ const saveNickname = () => {
 };
 
 let socket = null;
+
+// 遥控命令：优先走房间 WS，没有 WS 时退回 HTTP。
+const sendRemoteCommand = ({ command, payload } = {}) => {
+    if (!command) return;
+    const app = remoteApps.value.find(item => item.id === remoteAppId.value);
+    if (!app) return;
+    const message = { appId: app.appId, sessionId: app.sessionId, command };
+    if (payload && Object.keys(payload).length) message.payload = payload;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'remote:command', ...message }));
+        return;
+    }
+    fetch(`/api/remote/command?roomId=${encodeURIComponent(roomId.value ?? '')}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(message),
+    }).catch(error => console.error('Remote Command Error:', error));
+};
 let pollingTimer = null;
 let reconnectTimer = null;
 let pingTimer = null;
@@ -1514,7 +1532,7 @@ onUnmounted(() => {
     <RemoteControlPage v-show="activePage === 'remote'" v-model:app-id="remoteAppId" :song="singing"
                        :apps="remoteApps" :room-id="roomId || ''" :playback="remotePlayback"
                        :apps-error="remoteAppsError" @previous="prevSong" @next="nextSong"
-                       @refresh-apps="refreshRemoteApps" />
+                       @refresh-apps="refreshRemoteApps" @command="sendRemoteCommand" />
 
     <section v-if="activePage === 'library'" class="page-placeholder" aria-label="歌曲库">
         <div class="placeholder-icon" aria-hidden="true">

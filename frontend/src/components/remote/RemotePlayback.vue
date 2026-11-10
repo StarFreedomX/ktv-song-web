@@ -9,7 +9,9 @@ const props = defineProps({
     song: { type: Object, default: null },
     position: { type: Number, default: null },
     duration: { type: Number, default: null },
-    isPlaying: { type: Boolean, default: true }
+    isPlaying: { type: Boolean, default: true },
+    seekable: { type: Boolean, default: true },
+    disabled: Boolean
 });
 const emit = defineEmits(['previous', 'toggle-playback', 'next', 'seek', 'recast']);
 
@@ -43,7 +45,7 @@ function onSeekCommit(value) {
     seekPosition.value = value;
     emit('seek', value);
 }
-const canSeek = computed(() => props.duration > 0);
+const canSeek = computed(() => props.seekable && props.duration > 0);
 const formatTime = (seconds) => {
     if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '--:--';
     return `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
@@ -54,14 +56,15 @@ const formatTime = (seconds) => {
     <ControlPanel class="remote-playback">
         <div class="remote-song-heading">
             <h2 class="remote-song-title">{{ song?.title || '暂无歌曲' }}</h2>
-            <button type="button" class="remote-recast-button" aria-label="重新投屏" title="重新投屏" @click="recastSong">
+            <button type="button" class="remote-recast-button" aria-label="重新投屏" title="重新投屏"
+                    :disabled="disabled || !song" @click="recastSong">
                 <RefreshIcon :key="recastVersion" :class="{ 'animate-spin-once': recastAnimating }"
                              @animationend="finishRecastAnimation" @animationcancel="finishRecastAnimation" />
             </button>
         </div>
         <div class="remote-progress">
             <ControlRange :model-value="seekPosition" :max="duration > 0 ? duration : 100"
-                          :disabled="!canSeek" label="播放进度" :value-text="formatTime(seekPosition)"
+                          :disabled="disabled || !canSeek" label="播放进度" :value-text="formatTime(seekPosition)"
                           @update:model-value="onSeekInput" @change="onSeekCommit" />
             <div class="remote-progress-times">
                 <span>{{ formatTime(canSeek ? seekPosition : position) }}</span>
@@ -72,7 +75,8 @@ const formatTime = (seconds) => {
             <button type="button" class="remote-transport-button" aria-label="上一首" @click="$emit('previous')">
                 <ControlIcon name="skip-back" />
             </button>
-            <button type="button" class="remote-transport-button" :aria-label="isPlaying ? '暂停' : '播放'" @click="$emit('toggle-playback')">
+            <button type="button" class="remote-transport-button" :aria-label="isPlaying ? '暂停' : '播放'"
+                    :disabled="disabled" @click="$emit('toggle-playback')">
                 <ControlIcon :name="isPlaying ? 'pause' : 'play'" />
             </button>
             <button type="button" class="remote-transport-button" aria-label="下一首" @click="$emit('next')">
