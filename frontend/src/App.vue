@@ -110,6 +110,24 @@ const { apps: remoteApps, error: remoteAppsError, refresh: refreshRemoteApps } =
     computed(() => activePage.value === 'remote' && !roomNotFound.value),
     computed(() => !cfg.value.wsMode)
 );
+// 遥控页当前选中的执行端，由 RemoteControlPage 通过 v-model:app-id 维护。
+const remoteAppId = ref('');
+const remotePlayback = computed(() =>
+    remoteApps.value.find(app => app.id === remoteAppId.value)?.playback ?? {}
+);
+// 状态推送直接合并进列表，不再回拉；更旧的快照按 seq 丢弃。
+const applyRemoteState = ({ appId, playback }) => {
+    if (!appId || !playback) return;
+    const app = remoteApps.value.find(item => item.appId === appId);
+    if (!app) {
+        // 快照可能比列表新（例如刚上线），补拉一次。
+        refreshRemoteApps();
+        return;
+    }
+    const current = app.playback;
+    if (current && typeof current.seq === 'number' && playback.seq <= current.seq) return;
+    app.playback = playback;
+};
 const currentSync = ref(SyncStatus.WS_CONNECTING);
 
 // 存储（与后端保持一致的结构）
@@ -1155,6 +1173,10 @@ const initWebSocket = () => {
                 refreshRemoteApps();
                 return;
             }
+            if (data.type === 'remote:state') {
+                applyRemoteState(data);
+                return;
+            }
             // 请求期间保留通知，即使 Hash 等于当前本地值，返回中的快照也可能不同。
             if (data.type === 'UPDATE' && (updateInFlight || data.hash !== lastHash.value)) {
                 requestSync();
@@ -1489,7 +1511,8 @@ onUnmounted(() => {
 
     </section>
 
-    <RemoteControlPage v-show="activePage === 'remote'" :song="singing" :apps="remoteApps" :room-id="roomId || ''"
+    <RemoteControlPage v-show="activePage === 'remote'" v-model:app-id="remoteAppId" :song="singing"
+                       :apps="remoteApps" :room-id="roomId || ''" :playback="remotePlayback"
                        :apps-error="remoteAppsError" @previous="prevSong" @next="nextSong"
                        @refresh-apps="refreshRemoteApps" />
 
