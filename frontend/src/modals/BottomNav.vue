@@ -1,10 +1,12 @@
 <template>
     <nav class="nav-container" aria-label="页面导航">
+        <!-- 暂时下线「歌曲库」，发布只带控制器/遥控的版本；恢复时取消注释并把下面的 JS 注释一并还原
         <button type="button" class="nav-btn" :class="{ active: modelValue === 'library' }"
                 :aria-current="modelValue === 'library' ? 'page' : undefined" @click="$emit('update:modelValue', 'library')">
             <LibraryBigIcon width="22" height="22" aria-hidden="true" />
             <span>歌曲库</span>
         </button>
+        -->
         <button type="button" class="nav-btn" :class="{ active: modelValue === 'control' }"
                 :aria-current="modelValue === 'control' ? 'page' : undefined" @click="$emit('update:modelValue', 'control')">
             <!-- Lucide list-music (ISC); license: public/third-party/Lucide-LICENSE.txt -->
@@ -26,8 +28,9 @@
 </template>
 
 <script setup>
-import LibraryBigIcon from '../components/icons/LibraryBigIcon.vue';
 import RemoteControlIcon from '../components/icons/RemoteControlIcon.vue';
+// 暂时下线「歌曲库」选项；恢复时取消下面这行 import 与模板里对应按钮的注释
+// import LibraryBigIcon from '../components/icons/LibraryBigIcon.vue';
 
 defineProps({ modelValue: { type: String, default: 'control' } });
 defineEmits(['update:modelValue']);
