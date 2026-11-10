@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { usePlaybackProgress } from '../composables/usePlaybackProgress';
 import RemoteAppSelect from './remote/RemoteAppSelect.vue';
 import RemotePlayback from './remote/RemotePlayback.vue';
 import RemoteVolume from './remote/RemoteVolume.vue';
@@ -28,6 +29,8 @@ const emit = defineEmits(['refresh-apps', 'previous', 'next']);
 const REMOTE_APP_STORAGE_KEY = 'ktv_remote_app';
 
 const selectedAppId = defineModel('appId', { type: String, default: '' });
+// 两次快照之间按已过时间推算进度；拖动后从目标位置继续推算。
+const { position: progressPosition, setPosition: setProgressPosition } = usePlaybackProgress(computed(() => props.playback));
 // Explicit choice stays separate from the fallback shown while that app is offline.
 const preferredAppId = ref('');
 const volume = ref(null);
@@ -90,7 +93,7 @@ function previousSong() { emit('previous'); }
 function togglePlayback() {}
 function nextSong() { emit('next'); }
 function recastCurrentSong() {}
-function seekTo(seconds) {}
+function seekTo(seconds) { setProgressPosition(seconds); }
 function setVolume(value) {}
 function increaseVolume() {}
 function decreaseVolume() {}
@@ -103,7 +106,7 @@ function setQuality(value) {}
         <header class="remote-page-header"><h1>投屏遥控</h1></header>
         <RemoteAppSelect v-model="selectedAppId" :apps="apps" :error="appsError" @select="selectApp" @refresh="refreshApps" />
         <div class="remote-control-stack">
-            <RemotePlayback :song="song" :position="playback.position" :duration="playback.duration"
+            <RemotePlayback :song="song" :position="progressPosition" :duration="playback.duration"
                             :is-playing="playback.isPlaying ?? true"
                             @previous="previousSong" @toggle-playback="togglePlayback" @next="nextSong" @seek="seekTo"
                             @recast="recastCurrentSong" />

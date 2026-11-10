@@ -26,7 +26,23 @@ function finishRecastAnimation(event) {
 }
 
 const seekPosition = ref(0);
-watch(() => [props.song?.id, props.position], () => { seekPosition.value = props.position ?? 0; }, { immediate: true });
+const dragging = ref(false);
+watch(() => [props.song?.id, props.position], () => {
+    // 拖动时不让推算值把滑块拽走。
+    if (dragging.value) return;
+    seekPosition.value = props.position ?? 0;
+}, { immediate: true });
+
+function onSeekInput(value) {
+    dragging.value = true;
+    seekPosition.value = value;
+}
+
+function onSeekCommit(value) {
+    dragging.value = false;
+    seekPosition.value = value;
+    emit('seek', value);
+}
 const canSeek = computed(() => props.duration > 0);
 const formatTime = (seconds) => {
     if (seconds === null || !Number.isFinite(seconds) || seconds < 0) return '--:--';
@@ -44,9 +60,9 @@ const formatTime = (seconds) => {
             </button>
         </div>
         <div class="remote-progress">
-            <ControlRange v-model="seekPosition" :max="duration > 0 ? duration : 100"
+            <ControlRange :model-value="seekPosition" :max="duration > 0 ? duration : 100"
                           :disabled="!canSeek" label="播放进度" :value-text="formatTime(seekPosition)"
-                          @change="$emit('seek', $event)" />
+                          @update:model-value="onSeekInput" @change="onSeekCommit" />
             <div class="remote-progress-times">
                 <span>{{ formatTime(canSeek ? seekPosition : position) }}</span>
                 <span>{{ formatTime(duration) }}</span>
