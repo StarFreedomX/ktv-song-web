@@ -65,6 +65,7 @@
 | `INVALID_MESSAGE` | 非 JSON、二进制消息或超过 16 KiB |
 | `INVALID_REGISTER` | 注册字段不合法 |
 | `ALREADY_REGISTERED` | 同一连接重复注册 |
+| `NOT_REGISTERED` | 执行端未注册就上报状态 |
 | `ROOM_NOT_FOUND` | 房间不存在 |
 | `SERVICE_UNAVAILABLE` | 服务端异常 |
 
@@ -116,7 +117,7 @@
 
 ### 5.1 WS 推送
 
-服务端向房间内未注册为执行端的连接推送 `remote:state`，负载为执行端标识与完整快照：
+服务端向房间内所有连接推送 `remote:state`，负载为执行端标识与完整快照：
 
 ```json
 {"v":1,"type":"remote:state","appId":"phone-abc","playback":{

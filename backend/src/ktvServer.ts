@@ -149,15 +149,17 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
 
     // 存储房间 ID 与客户端集合的映射
     const roomClients = new Map<string, Set<IdentifiedWebSocket>>();
+    // 遥控通知发给房间内所有连接，执行端忽略即可。
+    const broadcastRemote = (roomId: string, payload: unknown) => {
+        const message = JSON.stringify(payload);
+        roomClients.get(roomId)?.forEach(ws => {
+            if (ws.readyState === WsReadyState.OPEN) ws.send(message);
+        });
+    };
     const remoteApps = new RemoteApps({
-        notify: roomId => {
-            const message = JSON.stringify({ v: 1, type: 'remote:apps' });
-            roomClients.get(roomId)?.forEach(ws => {
-                // 执行端自身不收设备列表变更。
-                if (ws.readyState !== WsReadyState.OPEN || remoteApps.isRegistered(ws)) return;
-                ws.send(message);
-            });
-        },
+        notifyApps: roomId => broadcastRemote(roomId, { v: 1, type: 'remote:apps' }),
+        notifyState: (roomId, appId, playback) =>
+            broadcastRemote(roomId, { v: 1, type: 'remote:state', appId, playback }),
         checkRoom: async roomId => (await ensureRoom(roomId)) !== null,
     });
     // 封装广播通知函数
