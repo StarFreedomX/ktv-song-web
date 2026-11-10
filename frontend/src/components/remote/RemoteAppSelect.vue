@@ -63,7 +63,10 @@ function finishRefreshAnimation(event) {
                         :class="{ 'is-selected': app.id === modelValue }" :aria-pressed="app.id === modelValue"
                         @click="selectApp(app.id)">{{ app.name }}</button>
                 <p v-if="error" class="remote-app-error" role="alert">{{ error }}</p>
-                <p v-else-if="!apps.length" class="remote-app-empty">暂无在线 App</p>
+                <p v-else-if="!apps.length" class="remote-app-empty">
+                    暂无在线 App<br />
+                    <span class="remote-app-hint">在 App 设置里开启「网页遥控」后才会出现</span>
+                </p>
             </div>
             <button type="button" class="remote-dialog-cancel" @click="dialog.close()">取消</button>
         </dialog>
