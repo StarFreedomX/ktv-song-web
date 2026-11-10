@@ -311,6 +311,30 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
         ctx.body = { success: true, apps: remoteApps.list(roomId) };
     });
 
+    // WS 关闭时控制端用 HTTP 下发命令；与 WS 通道共用转发逻辑。
+    router.post('/api/remote/command', async (ctx) => {
+        ctx.set('Cache-Control', 'no-store');
+        const roomId = Array.isArray(ctx.query.roomId) ? ctx.query.roomId[0] : ctx.query.roomId;
+        const roomIdError = validateRoomId(roomId);
+        if (!roomId || roomIdError) {
+            ctx.status = 400;
+            ctx.body = { success: false, msg: roomIdError };
+            return;
+        }
+        if (!await ensureRoom(roomId)) {
+            ctx.status = 404;
+            ctx.body = { success: false, msg: '房间不存在' };
+            return;
+        }
+        const result = remoteApps.forwardCommand(roomId, ctx.request.body);
+        if (result.ok === false) {
+            ctx.status = result.reason === 'offline' ? 409 : 400;
+            ctx.body = { success: false, msg: result.reason === 'offline' ? '执行端不在线' : '命令不合法' };
+            return;
+        }
+        ctx.body = { success: true };
+    });
+
     // 创建房间：已存在则拒绝，防止两拨人用同一房间号串房
     router.post('/api/createRoom', async (koaCtx) => {
         const { roomId: roomIds } = koaCtx.query;

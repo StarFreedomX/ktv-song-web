@@ -155,3 +155,71 @@ describe('遥控注册与状态', () => {
         expect(parseRegistration(registration('tv', { target: { name: '电视', mode: 'airplay' } }))).toBeNull();
     });
 });
+describe('命令转发', () => {
+    let apps: RemoteApps;
+    let controller: FakeSocket;
+
+    const connect = (roomId: string, appId: string) => {
+        const socket = new FakeSocket();
+        return { socket, ready: apps.handleMessage(roomId, socket as any, registration(appId)) };
+    };
+    const command = (appId: string, sessionId: string, body: Record<string, unknown>) => ({
+        v: 1, type: 'remote:command', appId, sessionId, ...body,
+    });
+
+    beforeEach(() => {
+        apps = new RemoteApps({
+            notifyApps: jest.fn(), notifyState: jest.fn(), checkRoom: async () => true,
+        });
+        controller = new FakeSocket();
+    });
+
+    afterEach(() => apps.close());
+
+    test('命令只转发给目标会话，payload 原样送达', async () => {
+        const { socket: first } = await connect('room-a', 'tv-1');
+        const { socket: second } = await connect('room-a', 'tv-2');
+        const { socket: otherRoom } = await connect('room-b', 'tv-1');
+        const [tv1] = apps.list('room-a');
+        await apps.handleMessage('room-a', controller as any, command(tv1.appId, tv1.sessionId, {
+            command: 'seek', payload: { seconds: 30 },
+        }));
+
+        expect(first.sent.at(-1)).toEqual({
+            v: 1, type: 'remote:command',
+            appId: 'tv-1', sessionId: tv1.sessionId,
+            command: 'seek', payload: { seconds: 30 },
+        });
+        expect(second.sent.some((frame: any) => frame.type === 'remote:command')).toBe(false);
+        expect(otherRoom.sent.some((frame: any) => frame.type === 'remote:command')).toBe(false);
+    });
+
+    test('顶号前的 sessionId 不会落到新会话', async () => {
+        const { socket: oldSocket } = await connect('room-a', 'tv-1');
+        const oldSession = apps.list('room-a')[0].sessionId;
+        const { socket: newSocket } = await connect('room-a', 'tv-1');
+
+        expect(oldSocket.closeReason).toBe('Session replaced');
+        const result = apps.forwardCommand('room-a', command('tv-1', oldSession, { command: 'pause' }));
+
+        expect(result).toEqual({ ok: false, reason: 'offline' });
+        expect(newSocket.sent.at(-1)?.type).toBe('remote:registered');
+        expect(newSocket.sent.some((frame: any) => frame.type === 'remote:command')).toBe(false);
+    });
+
+    test('命令名或参数不合法时不转发', async () => {
+        const { socket } = await connect('room-a', 'tv-1');
+        const { sessionId } = apps.list('room-a')[0];
+
+        const cases = [
+            command('tv-1', sessionId, { command: 'reboot' }),
+            command('tv-1', sessionId, { command: 'seek', payload: { seconds: -1 } }),
+            command('tv-1', sessionId, { command: 'setVolume', payload: { volume: 101 } }),
+            command('tv-1', sessionId, { command: 'changeVolume' }),
+        ];
+        for (const message of cases) {
+            expect(apps.forwardCommand('room-a', message)).toEqual({ ok: false, reason: 'invalid' });
+        }
+        expect(socket.sent.some((frame: any) => frame.type === 'remote:command')).toBe(false);
+    });
+});

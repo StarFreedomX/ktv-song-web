@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type WebSocket from 'ws';
 import { WsReadyState } from './types';
+import ktvLogger from './logger';
 
 export type RemoteTargetMode = 'dlna' | 'bilibili' | 'local';
 
@@ -137,6 +138,53 @@ export function parsePlayback(value: unknown): Omit<RemotePlayback, 'receivedAt'
     };
 }
 
+export const REMOTE_COMMANDS = [
+    'play', 'pause', 'seek', 'setQuality', 'setVolume', 'changeVolume', 'recast',
+] as const;
+
+export type RemoteCommandName = typeof REMOTE_COMMANDS[number];
+
+export interface RemoteCommand {
+    command: RemoteCommandName;
+    payload: Record<string, unknown>;
+}
+
+export type RemoteCommandResult =
+    | { ok: true }
+    | { ok: false; reason: 'invalid' | 'offline' };
+
+function isCommandName(value: unknown): value is RemoteCommandName {
+    return typeof value === 'string' && (REMOTE_COMMANDS as readonly string[]).includes(value);
+}
+
+/** 校验命令参数；返回 null 表示参数不合法。 */
+export function parseCommandPayload(command: RemoteCommandName, value: unknown): Record<string, unknown> | null {
+    const payload = isRecord(value) ? value : {};
+    switch (command) {
+        case 'play':
+        case 'pause':
+        case 'recast':
+            return {};
+        case 'seek': {
+            const seconds = parseNumber(payload.seconds);
+            return seconds !== null && seconds >= 0 ? { seconds } : null;
+        }
+        case 'setQuality': {
+            const qn = parseNumber(payload.qn);
+            if (qn === null || !Number.isInteger(qn) || qn <= 0) return null;
+            const parsed: Record<string, unknown> = { qn };
+            if (typeof payload.format === 'string' && payload.format) parsed.format = payload.format;
+            return parsed;
+        }
+        case 'setVolume': {
+            const volume = parseNumber(payload.volume);
+            return volume !== null && volume >= 0 && volume <= 100 ? { volume } : null;
+        }
+        case 'changeVolume':
+            return typeof payload.increase === 'boolean' ? { increase: payload.increase } : null;
+    }
+}
+
 /**
  * 遥控协议。连接与心跳由 /api/ws 统一管理，这里处理 remote: 前缀的消息和维护注册表。
  */
@@ -159,6 +207,7 @@ export class RemoteApps {
         const type = isRecord(message) ? message.type : undefined;
         if (type === 'remote:register') return this.handleRegister(roomId, socket, message);
         if (type === 'remote:playback') return this.handlePlayback(roomId, socket, message);
+        if (type === 'remote:command') return this.handleCommand(roomId, message);
         return this.sendError(socket, 'INVALID_MESSAGE', '未知消息类型');
     }
 
@@ -234,6 +283,33 @@ export class RemoteApps {
         const playback: RemotePlayback = { ...parsed, receivedAt: Date.now() };
         entry.app.playback = playback;
         this.options.notifyState(roomId, entry.app.appId, playback);
+    }
+
+    /** 把控制端的命令转发给指定会话；无回执，失败只返回原因。 */
+    forwardCommand(roomId: string, message: unknown): RemoteCommandResult {
+        const data = isRecord(message) ? message : null;
+        const appId = typeof data?.appId === 'string' ? data.appId : null;
+        const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : null;
+        if (!appId || !sessionId || !isCommandName(data?.command)) {
+            return { ok: false, reason: 'invalid' };
+        }
+        const payload = parseCommandPayload(data!.command as RemoteCommandName, data?.payload);
+        if (!payload) return { ok: false, reason: 'invalid' };
+
+        const entry = this.rooms.get(roomId)?.get(appId);
+        if (!entry || entry.app.sessionId !== sessionId || entry.socket.readyState !== WsReadyState.OPEN) {
+            return { ok: false, reason: 'offline' };
+        }
+        this.send(entry.socket, {
+            v: 1, type: 'remote:command',
+            appId, sessionId, command: data!.command, payload,
+        });
+        return { ok: true };
+    }
+
+    private handleCommand(roomId: string, message: unknown) {
+        const result = this.forwardCommand(roomId, message);
+        if (result.ok === false) ktvLogger.debug(`[remote] 命令丢弃: ${result.reason}`);
     }
 
     private send(socket: WebSocket, payload: unknown) {

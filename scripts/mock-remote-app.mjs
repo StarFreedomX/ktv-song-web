@@ -13,28 +13,39 @@ console.log('Connecting:', url.href);
 
 let seq = 0;
 let position = 0;
+let volume = 40;
+let isPlaying = true;
+let qualities = [
+    { qn: 80, format: 'dash', label: '1080P高清', now: true },
+    { qn: 64, format: 'dash', label: '720P准高清' },
+];
 let timer = null;
 
 // 5 秒一次的状态采样，位置按 elapsed 推进。
 function reportState() {
-    position = (position + 5) % DURATION;
+    if (isPlaying) position = (position + 5) % DURATION;
     seq += 1;
     socket.send(JSON.stringify({
         v: 1,
         type: 'remote:playback',
         playback: {
-            seq,
-            position,
-            duration: DURATION,
-            volume: 40,
-            isPlaying: true,
-            qualities: [
-                { qn: 80, format: 'dash', label: '1080P高清', now: true },
-                { qn: 64, format: 'dash', label: '720P准高清' },
-            ],
+            seq, position, duration: DURATION, volume, isPlaying, qualities,
             capabilities: { absoluteVolume: true, seek: true, quality: true },
         },
     }));
+}
+
+// 收到的命令直接作用在模拟的播放状态上，下一次采样即可看到结果。
+function applyCommand({ command, payload = {} }) {
+    switch (command) {
+        case 'play': isPlaying = true; break;
+        case 'pause': isPlaying = false; break;
+        case 'seek': position = Math.max(0, Math.min(DURATION, Number(payload.seconds) || 0)); break;
+        case 'setVolume': volume = payload.volume; break;
+        case 'changeVolume': volume = Math.max(0, Math.min(100, volume + (payload.increase ? 5 : -5))); break;
+        case 'setQuality': qualities = qualities.map(item => ({ ...item, now: item.qn === payload.qn })); break;
+        case 'recast': position = 0; isPlaying = true; break;
+    }
 }
 
 socket.addEventListener('open', () => socket.send(JSON.stringify({
@@ -51,14 +62,18 @@ socket.addEventListener('message', event => {
         }
         return;
     }
+    if (data.type === 'remote:command') {
+        console.log('Command:', data.command, JSON.stringify(data.payload ?? {}));
+        applyCommand(data);
+        return;
+    }
     if (data.type === 'remote:error') {
         console.error('Error:', data.code, data.msg);
         process.exitCode = 1;
         return;
     }
     // 歌单同步与设备列表通知与本客户端无关。
-    if (data.type === 'pong' || data.type === 'UPDATE' || data.type === 'remote:apps') return;
-    if (data.type === 'remote:state') return;
+    if (data.type === 'pong' || data.type === 'UPDATE' || data.type === 'remote:apps' || data.type === 'remote:state') return;
     console.log(data);
 });
 
