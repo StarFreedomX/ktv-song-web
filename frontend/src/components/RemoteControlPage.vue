@@ -28,12 +28,30 @@ const quality = ref('');
 const playIntent = ref(null);
 
 const capabilities = computed(() => props.playback.capabilities ?? {});
-const qualityOptions = computed(() => (props.playback.qualities ?? []).map(item => ({
-    value: `${item.qn}:${item.format ?? ''}`,
-    label: item.label,
-    qn: item.qn,
-    format: item.format
-})));
+// 与播放页一致：按取源方式分组，选项文本由前端拼上格式前缀。
+const qualityGroups = computed(() => {
+    const groups = new Map();
+    for (const item of props.playback.qualities ?? []) {
+        const format = item.format ?? '';
+        if (!groups.has(format)) {
+            groups.set(format, {
+                format,
+                label: format ? format.toUpperCase() : '',
+                options: []
+            });
+        }
+        groups.get(format).options.push({
+            value: `${item.qn}:${format}`,
+            label: format
+                ? `[${format.toUpperCase()}] ${item.label.replace(/\s+/g, '')}`
+                : item.label,
+            qn: item.qn,
+            format: item.format
+        });
+    }
+    return [...groups.values()];
+});
+
 const selectedQuality = computed(() => {
     const current = (props.playback.qualities ?? []).find(item => item.now === true);
     return current ? `${current.qn}:${current.format ?? ''}` : '';
@@ -140,10 +158,13 @@ function stepVolume(delta) {
 function increaseVolume() { stepVolume(5); }
 function decreaseVolume() { stepVolume(-5); }
 function setQuality(value) {
-    const option = qualityOptions.value.find(item => item.value === value);
-    if (!option) return;
-    quality.value = value;
-    send('setQuality', option.format ? { qn: option.qn, format: option.format } : { qn: option.qn });
+    for (const group of qualityGroups.value) {
+        const option = group.options.find(item => item.value === value);
+        if (!option) continue;
+        quality.value = value;
+        send('setQuality', option.format ? { qn: option.qn, format: option.format } : { qn: option.qn });
+        return;
+    }
 }
 </script>
 
@@ -161,7 +182,7 @@ function setQuality(value) {
             <RemoteVolume v-model="volume" :absolute-volume="capabilities.absoluteVolume !== false"
                           :disabled="controlsDisabled"
                           @change="setVolume" @increase="increaseVolume" @decrease="decreaseVolume" />
-            <RemoteDisplaySettings :quality="quality" :quality-options="qualityOptions"
+            <RemoteDisplaySettings :quality="quality" :quality-groups="qualityGroups"
                                    :disabled="controlsDisabled || capabilities.quality === false"
                                    @quality-change="setQuality" />
             <slot name="controls" :app-id="selectedAppId" :playback="playback" />
