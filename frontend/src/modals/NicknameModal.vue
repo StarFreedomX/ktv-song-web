@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="modal-mask"
-             @click.self="handleClose">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
             <div class="modal-container">
                 <div class="modal-icon-badge">
                     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -38,6 +39,7 @@
 
 <script setup>
 import ComfirmButton from './components/ComfirmButton.vue';
+import { useBackdropClose } from '../composables/useBackdropClose';
 
 const props = defineProps({
     modelValue: Boolean, // showNicknameModal
@@ -53,6 +55,8 @@ const handleClose = () => {
         emit('update:modelValue', false);
     }
 };
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(handleClose);
 
 const handleSave = () => {
     if (props.tempNickname?.trim()) {

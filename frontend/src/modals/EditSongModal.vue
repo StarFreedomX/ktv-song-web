@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="modal-mask"
-             @click.self="$emit('update:modelValue', null)">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
 
             <div class="modal-container">
                 <h3 class="modal-title">编辑歌曲信息</h3>
@@ -48,12 +49,15 @@
 <script setup>
 import { ref, watch } from 'vue';
 import ComfirmButton from './components/ComfirmButton.vue';
+import { useBackdropClose } from '../composables/useBackdropClose';
 
 const props = defineProps({
     modelValue: Object,
 });
 
 const emit = defineEmits(['update:modelValue', 'save']);
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(() => emit('update:modelValue', null));
 
 const localForm = ref({ title: '', url: '' });
 

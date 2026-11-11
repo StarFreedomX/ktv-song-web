@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="modal-overlay"
-             @click.self="$emit('update:modelValue', null)">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
 
             <div class="modal-container">
                 <div class="modal-content">
@@ -90,10 +91,13 @@
 
 <script setup>
 import ComfirmButton from './components/ComfirmButton.vue';
+import { useBackdropClose } from '../composables/useBackdropClose';
 
 defineProps({
     modelValue: Object
 });
 
-defineEmits(['update:modelValue', 'confirm']);
+const emit = defineEmits(['update:modelValue', 'confirm']);
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(() => emit('update:modelValue', null));
 </script>

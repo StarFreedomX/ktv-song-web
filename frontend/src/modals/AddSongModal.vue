@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="fixed inset-0 z-70 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-             @click.self="handleClose">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
             <div class="modal-container bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 space-y-4">
                 <div class="flex items-center justify-between px-2">
                     <h3 class="text-xl font-black text-slate-800">
@@ -85,6 +86,7 @@
 
 <script setup>
 import ComfirmButton from './components/ComfirmButton.vue';
+import { useBackdropClose } from '../composables/useBackdropClose';
 
 const props = defineProps({
     modelValue: Boolean,          // 控制显隐
@@ -113,6 +115,8 @@ const handleClose = () => {
     emit('update:modelValue', false);
     emit('update:isAddingToFavorites', false);
 };
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(handleClose);
 
 const handleClearAll = () => {
     emit('update:autoInput', '');

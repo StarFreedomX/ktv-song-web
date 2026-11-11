@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import ControlIcon from '../icons/ControlIcon.vue';
 import RefreshIcon from '../icons/RefreshIcon.vue';
+import { useBackdropClose } from '../../composables/useBackdropClose';
 
 const props = defineProps({
     modelValue: { type: String, default: '' },
@@ -14,6 +15,8 @@ const expanded = ref(false);
 const refreshVersion = ref(0);
 const refreshAnimating = ref(false);
 const selectedApp = computed(() => props.apps.find(app => app.id === props.modelValue));
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(() => dialog.value?.close());
 
 function openPicker() {
     refreshAnimating.value = false;
@@ -49,7 +52,8 @@ function finishRefreshAnimation(event) {
     </div>
     <Teleport to="body">
         <dialog ref="dialog" id="remote-app-dialog" class="remote-app-dialog" aria-labelledby="remote-app-dialog-title"
-                @close="expanded = false; refreshAnimating = false" @click="($event.target === dialog) && dialog.close()">
+                @close="expanded = false; refreshAnimating = false"
+                @pointerdown="onBackdropPointerDown" @click="onBackdropClick">
             <header class="remote-app-dialog-header">
                 <h2 id="remote-app-dialog-title">选择投屏 App</h2>
                 <button type="button" class="remote-app-refresh" aria-label="刷新投屏 App 列表" title="刷新"

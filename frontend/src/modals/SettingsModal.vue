@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="modal-overlay"
-             @click.self="emit('update:modelValue', false)">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
 
             <div class="settings-modal-container">
                 <div class="modal-header">
@@ -81,6 +82,7 @@ import SettingSegment from './components/SettingSegment.vue';
 import SettingSwitch from './components/SettingSwitch.vue';
 import SettingCollapse from "./components/SettingCollapse.vue";
 import ComfirmButton from "./components/ComfirmButton.vue";
+import { useBackdropClose } from '../composables/useBackdropClose';
 
 const props = defineProps({
     modelValue: Boolean,
@@ -88,6 +90,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(['update:modelValue', 'update:cfg']);
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(() => emit('update:modelValue', false));
 
 const draft = reactive({});
 

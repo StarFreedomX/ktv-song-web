@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="fixed inset-0 z-80 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur"
-             @click.self="handleClose">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
             <div class="bg-white w-full max-w-3xl max-h-[92dvh] overflow-hidden rounded-3xl sm:rounded-[2.5rem] shadow-2xl p-4 sm:p-6 flex flex-col gap-4">
                 <div class="flex items-center justify-between px-2">
                     <div>
@@ -121,6 +122,8 @@
 </template>
 
 <script setup>
+import { useBackdropClose } from '../composables/useBackdropClose';
+
 const props = defineProps({
     modelValue: Boolean,
     searchKeyword: String,
@@ -145,6 +148,8 @@ const emit = defineEmits([
 const handleClose = () => {
     emit('update:modelValue', false);
 };
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(handleClose);
 
 const onImgError = (event, item) => {
     const img = event?.target;

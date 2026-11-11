@@ -2,7 +2,8 @@
     <transition name="modal-fade">
         <div v-if="modelValue"
              class="modal-mask"
-             @click.self="$emit('update:modelValue', false)">
+             @pointerdown="onBackdropPointerDown"
+             @click="onBackdropClick">
             <div class="modal-container">
                 <div class="modal-header">
                     <h3 class="modal-title">我的收藏 ({{ favorites.length }})</h3>
@@ -90,6 +91,8 @@
 </template>
 
 <script setup>
+import { useBackdropClose } from '../composables/useBackdropClose';
+
 defineProps({
     modelValue: Boolean,
     favorites: Array,
@@ -97,7 +100,7 @@ defineProps({
     searchQuery: String
 });
 
-defineEmits([
+const emit = defineEmits([
     'update:modelValue',
     'update:searchQuery',
     'add-new',
@@ -108,6 +111,8 @@ defineEmits([
     'import',
     'go-to'
 ]);
+
+const { onBackdropPointerDown, onBackdropClick } = useBackdropClose(() => emit('update:modelValue', false));
 </script>
 
 <style scoped>
