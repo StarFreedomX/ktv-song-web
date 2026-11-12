@@ -16,7 +16,7 @@
 
                     <div class="space-y-2">
                         <h3 class="modal-title">确认打乱列表？</h3>
-                        <p class="modal-desc">所有歌曲的播放顺序将被随机重新排列。</p>
+                        <p class="modal-desc">待唱歌曲将按点歌人分散排列</p>
                     </div>
                 </div>
 

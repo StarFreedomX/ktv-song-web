@@ -452,13 +452,32 @@ export function runKTVServer(storage: Storage, archiveStore: ArchiveStore) {
             koaCtx.body = { success: false, msg: '房间不存在' };
             return;
         }
-        const pendingSongs = [...allSongLists.queued];
-
-        // 仅对未唱歌曲进行 Fisher-Yates Shuffle
-        for (let i = pendingSongs.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [pendingSongs[i], pendingSongs[j]] = [pendingSongs[j], pendingSongs[i]];
+        const groups = new Map<string, Song[]>();
+        for (const song of allSongLists.queued) {
+            const addedBy = song.addedBy?.trim() || '';
+            if (!groups.has(addedBy)) groups.set(addedBy, []);
+            groups.get(addedBy)!.push(song);
         }
+
+        const positionedSongs: { song: Song; position: number }[] = [];
+        for (const group of groups.values()) {
+            for (let i = group.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [group[i], group[j]] = [group[j], group[i]];
+            }
+
+            const step = 1 / group.length;
+            const offset = Math.random() * step;
+            group.forEach((song, i) => {
+                // 沿圆环分散，同组相邻位置的间隔为基础间隔的 80%～120%。
+                const jitter = (Math.random() - 0.5) * 0.2 * step;
+                const position = (offset + i * step + jitter + 1) % 1;
+                positionedSongs.push({ song, position });
+            });
+        }
+        const pendingSongs = positionedSongs
+            .sort((a, b) => a.position - b.position)
+            .map(({ song }) => song);
 
         const finalSongLists: SongLists = {
             ...allSongLists,
