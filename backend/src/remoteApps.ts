@@ -191,7 +191,7 @@ export function parseCommandPayload(command: RemoteCommandName, value: unknown):
 export class RemoteApps {
     private readonly rooms = new Map<string, Map<string, RegisteredApp>>();
     private readonly sessions = new Map<WebSocket, RegisteredApp>();
-    private readonly registering = new Set<WebSocket>();
+    private readonly registering = new Map<WebSocket, symbol>();
     private closed = false;
 
     constructor(private readonly options: RemoteAppsOptions) {}
@@ -205,6 +205,14 @@ export class RemoteApps {
     /** 处理一条 remote: 前缀的消息，回复直接写回该连接。 */
     async handleMessage(roomId: string, socket: WebSocket, message: unknown): Promise<void> {
         const type = isRecord(message) ? message.type : undefined;
+        if (type === 'remote:unregister') {
+            if (!isRecord(message) || message.v !== 1) {
+                return this.sendError(socket, 'INVALID_MESSAGE', '消息格式无效');
+            }
+            this.unregister(roomId, socket);
+            this.send(socket, { v: 1, type: 'remote:unregistered' });
+            return;
+        }
         if (type === 'remote:register') return this.handleRegister(roomId, socket, message);
         if (type === 'remote:playback') return this.handlePlayback(roomId, socket, message);
         if (type === 'remote:command') return this.handleCommand(roomId, message);
@@ -217,6 +225,7 @@ export class RemoteApps {
     }
 
     unregister(roomId: string, socket: WebSocket) {
+        this.registering.delete(socket);
         const entry = this.sessions.get(socket);
         if (!entry) return;
         this.sessions.delete(socket);
@@ -242,9 +251,12 @@ export class RemoteApps {
         const registration = parseRegistration(message);
         if (!registration) return this.sendError(socket, 'INVALID_REGISTER', '注册信息无效');
 
-        this.registering.add(socket);
+        const attempt = Symbol();
+        this.registering.set(socket, attempt);
         try {
-            if (!await this.options.checkRoom(roomId)) {
+            const exists = await this.options.checkRoom(roomId);
+            if (this.registering.get(socket) !== attempt) return;
+            if (!exists) {
                 return this.sendError(socket, 'ROOM_NOT_FOUND', '房间不存在');
             }
             if (this.closed) return this.sendError(socket, 'SERVICE_UNAVAILABLE', '服务暂不可用');
@@ -270,7 +282,7 @@ export class RemoteApps {
             });
             this.options.notifyApps(roomId);
         } finally {
-            this.registering.delete(socket);
+            if (this.registering.get(socket) === attempt) this.registering.delete(socket);
         }
     }
 

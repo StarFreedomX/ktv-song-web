@@ -102,6 +102,56 @@ describe('遥控注册与状态', () => {
         expect(apps.list('room-a')[0].sessionId).toBe(current.sessionId);
     });
 
+    test('注销只移除当前连接，保留 socket 并允许重新注册', async () => {
+        const { socket } = await connect('room-a', 'tv-1');
+        const { socket: other } = await connect('room-a', 'tv-2');
+        const oldSession = apps.list('room-a')[0].sessionId;
+        await report('room-a', socket, playback());
+        notifyApps.mockClear();
+
+        // 指定其他 appId 不会改变注销所属的连接。
+        await report('room-a', socket, { v: 1, type: 'remote:unregister', appId: 'tv-2' });
+        expect(apps.list('room-a').map(app => app.appId)).toEqual(['tv-2']);
+        expect(socket.readyState).toBe(WsReadyState.OPEN);
+        expect(other.readyState).toBe(WsReadyState.OPEN);
+        expect(socket.sent.at(-1)).toEqual({ v: 1, type: 'remote:unregistered' });
+        expect(notifyApps).toHaveBeenCalledTimes(1);
+        expect(apps.forwardCommand('room-a', {
+            appId: 'tv-1', sessionId: oldSession, command: 'pause',
+        })).toEqual({ ok: false, reason: 'offline' });
+
+        await report('room-a', socket, { v: 1, type: 'remote:unregister' });
+        expect(notifyApps).toHaveBeenCalledTimes(1);
+        await report('room-a', socket, registration('tv-1'));
+        const current = apps.list('room-a').find(app => app.appId === 'tv-1')!;
+        expect(current.sessionId).not.toBe(oldSession);
+        expect(current.playback).toBeNull();
+        expect(apps.forwardCommand('room-a', {
+            appId: 'tv-1', sessionId: oldSession, command: 'pause',
+        })).toEqual({ ok: false, reason: 'offline' });
+    });
+
+    test('注销取消待完成的注册，旧校验不会覆盖同一连接的新注册', async () => {
+        const checks: Array<(exists: boolean) => void> = [];
+        apps.close();
+        apps = new RemoteApps({
+            notifyApps, notifyState,
+            checkRoom: () => new Promise(resolve => checks.push(resolve)),
+        });
+        const socket = new FakeSocket();
+        const first = report('room-a', socket, registration('tv-1'));
+        await report('room-a', socket, { v: 1, type: 'remote:unregister' });
+        const second = report('room-a', socket, registration('tv-1'));
+        checks[0](true);
+        await first;
+        expect(apps.list('room-a')).toEqual([]);
+        checks[1](true);
+        await second;
+        expect(apps.list('room-a')).toHaveLength(1);
+        expect(socket.sent.filter(frame => frame.type === 'remote:registered')).toHaveLength(1);
+        expect(notifyApps).toHaveBeenCalledTimes(1);
+    });
+
     test('字段缺失的上报被拒绝，已有快照保持不变', async () => {
         const { socket } = await connect('room-a', 'tv-1');
         await report('room-a', socket, playback({ seq: 5, position: 10 }));
