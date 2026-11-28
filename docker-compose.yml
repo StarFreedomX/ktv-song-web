@@ -1,11 +1,11 @@
 services:
     # 后端服务
-    ktv-web-backend:
+    karalive-backend:
         build:
             context: .
             dockerfile: backend/Dockerfile # 指向后端的 Dockerfile 路径
-        image: ghcr.io/starfreedomx/ktv-song-web-backend:latest
-        container_name: ktv-web-backend
+        image: ghcr.io/starfreedomx/karalive-backend:latest
+        container_name: karalive-backend
         restart: always
         ports:
             - "5823:5823"
@@ -26,26 +26,26 @@ services:
             - ktv_room_archive:/app/data
 
     # 前端服务
-    ktv-web-frontend:
+    karalive-frontend:
         build:
             context: .
             dockerfile: frontend/Dockerfile # 指向前端的 Dockerfile 路径
-        image: ghcr.io/starfreedomx/ktv-song-web-frontend:latest
-        container_name: ktv-web-frontend
+        image: ghcr.io/starfreedomx/karalive-frontend:latest
+        container_name: karalive-frontend
         restart: always
         ports:
             - "5526:5526"
         environment:
-            BACKEND_URL: http://ktv-web-backend:5823
+            BACKEND_URL: http://karalive-backend:5823
             HOST: 0.0.0.0
             PORT: 5526
         depends_on:
-            - ktv-web-backend
+            - karalive-backend
 
     # Redis 数据库
     redis:
         image: redis:alpine
-        container_name: ktv-web-redis
+        container_name: karalive-redis
         restart: always
         command: redis-server --appendonly yes
         volumes:

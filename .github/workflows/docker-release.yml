@@ -22,9 +22,9 @@ jobs:
             matrix:
                 include:
                     -   component: backend
-                        image_name: ktv-song-web-backend
+                        image_name: karalive-backend
                     -   component: frontend
-                        image_name: ktv-song-web-frontend
+                        image_name: karalive-frontend
         steps:
             -   name: Checkout code
                 uses: actions/checkout@v5
@@ -45,6 +45,9 @@ jobs:
                 uses: docker/metadata-action@v6
                 with:
                     images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image_name }}
+                    labels: |
+                        org.opencontainers.image.title=${{ matrix.image_name }}
+                        org.opencontainers.image.description=karalive 多人在线点歌台
                     tags: |
                         type=ref,event=branch
                         # 正式 tag：v0.7.0 → 0.7.0；

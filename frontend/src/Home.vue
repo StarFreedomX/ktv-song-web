@@ -11,7 +11,7 @@
                         alt=""
                     />
 
-                    <h1 class="text-3xl font-black text-slate-800 mb-1">KTV Queue</h1>
+                    <h1 class="text-3xl font-black text-slate-800 mb-1">karalive</h1>
                     <div class="h-1 w-full bg-[var(--brand-color,#FE3C71)] rounded-full"></div>
                 </div>
                 <p class="mt-4 text-slate-500 font-bold text-sm">输入房间号进入房间</p>

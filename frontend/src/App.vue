@@ -53,7 +53,7 @@ watch(() => route.query.roomId, (newRoomId) => {
 }, { immediate: true });
 
 watch(roomId, (newRoomId) => {
-    document.title = newRoomId ? `${newRoomId} - KTV房间` : 'KTV房间';
+    document.title = newRoomId ? `karalive 房间 ${newRoomId}` : 'karalive';
 }, { immediate: true });
 
 // 字符串常量
@@ -1324,7 +1324,7 @@ onUnmounted(() => {
                     class="absolute -left-9 top-2 w-10 h-10 object-contain"
                     alt=""
                 />
-                <h1 class="text-3xl font-black text-slate-800 mb-1">KTV Queue</h1>
+                <h1 class="text-3xl font-black text-slate-800 mb-1">karalive</h1>
                 <div class="h-1 w-full bg-[var(--brand-color)] rounded-full"></div>
             </div>
 
@@ -1354,8 +1354,7 @@ onUnmounted(() => {
     <section v-show="activePage === 'control'" aria-label="歌单控制">
     <header class="mb-6">
         <div class="flex justify-between items-start">
-            <h1 @click="backHome()" class="brand-title cursor-pointer">KTV<br/>Queue</h1>
-            <div class="flex flex-col items-end gap-2">
+            <h1 @click="backHome()" class="brand-title cursor-pointer">karalive</h1>
             <div class="flex gap-2">
                 <button @click="cfg.hostMode = !cfg.hostMode"
                         :class="['btn-host', cfg.hostMode ? 'active' : 'inactive']">
@@ -1382,22 +1381,6 @@ onUnmounted(() => {
                         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                     </svg>
                 </button>
-            </div>
-
-            <div class="flex flex-col items-end gap-1">
-                <div :class="['px-2 py-0.5 rounded-xl border flex items-center gap-1.5 transition-all shadow-sm',
-                currentSync === SyncStatus.SUCCESS ? 'bg-emerald-50 border-emerald-200' :
-                currentSync === SyncStatus.FAILED ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200']">
-                    <span class="relative flex h-1.5 w-1.5">
-                        <span v-if="currentSync.dot.includes('animate')"
-                              :class="['absolute inline-flex h-full w-full rounded-full opacity-75', currentSync.dot]"></span>
-                        <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', currentSync.dot]"></span>
-                    </span>
-                    <span :class="['sync-label', currentSync.color]">
-                        {{ currentSync.label }}
-                    </span>
-                </div>
-            </div>
             </div>
         </div>
         <div class="mt-2">
@@ -1442,6 +1425,18 @@ onUnmounted(() => {
                     </svg>
                     <span>{{ copyLinkStatus ? '已复制' : '分享' }}</span>
                 </button>
+                <div :class="['ml-auto shrink-0 px-2 py-0.5 rounded-xl border flex items-center gap-1.5 transition-all shadow-sm',
+                currentSync === SyncStatus.SUCCESS ? 'bg-emerald-50 border-emerald-200' :
+                currentSync === SyncStatus.FAILED ? 'bg-rose-50 border-rose-200' : 'bg-slate-50 border-slate-200']">
+                    <span class="relative flex h-1.5 w-1.5">
+                        <span v-if="currentSync.dot.includes('animate')"
+                              :class="['absolute inline-flex h-full w-full rounded-full opacity-75', currentSync.dot]"></span>
+                        <span :class="['relative inline-flex rounded-full h-1.5 w-1.5', currentSync.dot]"></span>
+                    </span>
+                    <span :class="['sync-label', currentSync.color]">
+                        {{ currentSync.label }}
+                    </span>
+                </div>
             </div>
             <p v-if="roomUuid" class="text-[10px] text-slate-400 break-all mt-1">UUID: {{ roomUuid }}</p>
             <p class="copy-link-hint">{{ copyLinkStatus || '复制后可发到聊天软件，邀请别人来点歌' }}</p>
@@ -1690,7 +1685,7 @@ onUnmounted(() => {
 
 /* 2. 基础文字样式 */
 .brand-title {
-    @apply text-3xl font-black transition-colors;
+    @apply text-3xl font-black transition-colors sm:text-3xl;
     color: var(--brand-color);
 }
 

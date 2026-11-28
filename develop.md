@@ -1,4 +1,4 @@
-# 开发与部署指南
+# karalive 开发与部署指南
 
 本文面向部署者和开发者：搭建自己的点歌台请看[自行部署](#自行部署)，修改代码或本地联调请看[本地开发](#本地开发)。日常建房、点歌和投屏操作见[使用指南](readme.md)。
 
@@ -18,19 +18,19 @@
 
 ```yaml
 services:
-  ktv-web-backend:
-    image: ghcr.io/starfreedomx/ktv-song-web-backend:latest
+  karalive-backend:
+    image: ghcr.io/starfreedomx/karalive-backend:latest
     restart: unless-stopped
     depends_on:
       - redis
     volumes:
       - ktv_room_archive:/app/data
 
-  ktv-web-frontend:
-    image: ghcr.io/starfreedomx/ktv-song-web-frontend:latest
+  karalive-frontend:
+    image: ghcr.io/starfreedomx/karalive-frontend:latest
     restart: unless-stopped
     depends_on:
-      - ktv-web-backend
+      - karalive-backend
     ports:
       - "5526:5526"
 
@@ -57,14 +57,16 @@ docker compose up -d
 
 升级前注意保留并备份 `ktv_room_archive`（历史歌单）和 `redis_data`（活跃房间与搜索缓存）两个数据卷，避免执行会删卷的 `docker compose down -v`。另外，Redis 持久化只保证重启不丢数据，不会取消活跃房间的空闲过期时间。
 
+已有 Docker 部署需要等更名后的前后端镜像发布，再一起切换。先在原部署目录备份数据，并用原配置运行 `docker compose down`，不加 `-v`。随后更新 Compose 中的服务名和镜像名，保留原来的 Compose 项目名和数据卷配置，再按上面的命令拉取并启动。
+
 ### 源码部署
 
 准备 Git、Node.js（22 或 24 的最新补丁版）和 Redis。先启动 Redis，再安装仓库 `package.json` 中 `packageManager` 指定的 pnpm 版本，然后拉取源码、构建并启动：
 
 ```sh
 npm install -g pnpm@11.28.13
-git clone https://github.com/StarFreedomX/ktv-song-web.git
-cd ktv-song-web
+git clone https://github.com/StarFreedomX/ktv-song-web.git karalive
+cd karalive
 pnpm install --frozen-lockfile
 pnpm build
 pnpm start
@@ -87,14 +89,14 @@ pnpm start
 
 ### GitHub Release 压缩包
 
-环境要求与[源码部署](#源码部署)相同（Node.js、pnpm 和 Redis）。前往 [GitHub Releases](https://github.com/StarFreedomX/ktv-song-web/releases) 下载整合包 `ktv-song-web-unified-*.zip`，解压后在目录内运行：
+环境要求与[源码部署](#源码部署)相同（Node.js、pnpm 和 Redis）。前往 [GitHub Releases](https://github.com/StarFreedomX/ktv-song-web/releases) 下载整合包 `karalive-unified-*.zip`，解压后在目录内运行：
 
 ```sh
 pnpm install --prod
 pnpm start
 ```
 
-也可以分别下载后端和前端独立包（`ktv-song-web-backend-*.zip`、`ktv-song-web-frontend-*.zip`），解压后在各自目录执行相同命令，先启动后端。如果前后端不在同一台机器上，需让后端监听前端可达的地址，并在前端 `.env.local` 中将 `BACKEND_URL` 指向后端地址。升级时保留原有的 `.env.local`、Redis 数据和存档文件，或通过 `ROOM_ARCHIVE_DB_PATH` 指定固定存档路径。
+也可以分别下载后端和前端独立包（`karalive-backend-*.zip`、`karalive-frontend-*.zip`），解压后在各自目录执行相同命令，先启动后端。如果前后端不在同一台机器上，需让后端监听前端可达的地址，并在前端 `.env.local` 中将 `BACKEND_URL` 指向后端地址。升级时保留原有的 `.env.local`、Redis 数据和存档文件，或通过 `ROOM_ARCHIVE_DB_PATH` 指定固定存档路径。
 
 ### 默认配置
 
@@ -127,7 +129,7 @@ pnpm dev
 
 ```sh
 docker compose up -d --build
-docker compose logs -f ktv-web-backend ktv-web-frontend
+docker compose logs -f karalive-backend karalive-frontend
 ```
 
 启动后网页访问 `http://localhost:5526/`，后端调试端口为 `5823`。直接调用后端房间接口时，需先创建房间再读取歌单（查询不存在的房间会返回 `404`，不会自动建房）：

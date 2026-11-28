@@ -8,7 +8,7 @@
 | --- | --- |
 | 源码或 Release 压缩包 | 后端写在 `backend/.env.local`，前端写在 `frontend/.env.local`；若分别解压了独立包，则写在各自解压目录的 `.env.local` |
 | Vite 开发服务 | 后端地址写在 `frontend/.env.local`；使用模式专用配置时，`.env.development` 或 `.env.development.local` 中的同名值优先 |
-| Docker Compose | 后端参数写在 `services.ktv-web-backend.environment`，前端对外端口写在 `services.ktv-web-frontend.ports` |
+| Docker Compose | 后端参数写在 `services.karalive-backend.environment`，前端对外端口写在 `services.karalive-frontend.ports` |
 
 Node.js 前后端和 Vite 都会优先读取进程中已有的环境变量。未设置时，Node.js 启动脚本依次读取各自目录的 `.env.local` 和 `.env`（`.env.local` 优先），修改后需重启对应服务。Vite 的模式加载顺序见[环境变量与模式](https://vite.dev/guide/env-and-mode.html#env-files)。
 
@@ -66,7 +66,7 @@ B 站搜索的点击热度单独保存，自最近一次点选起保留 365 天�
 
 Vite 开发服务不读取这里的 `HOST` 和 `PORT`。开发时如需调整监听地址或端口，可从仓库根目录运行 `pnpm --filter ./frontend dev --host 0.0.0.0 --port 5173`。
 
-Docker 前端容器使用 Nginx 托管静态页面，容器内监听 `5526` 端口，`/api/` 反向代理固定指向 `http://ktv-web-backend:5823/api/`。给 Docker 前端设置 `HOST`、`PORT` 或 `BACKEND_URL` 都不会生效。改网页对外端口只需修改 Compose 映射左侧（如 `"8080:5526"`）；如需修改 Nginx 的后端代理目标，请调整 [Nginx 模板](../frontend/nginx.conf.template) 后重新构建前端镜像。
+Docker 前端容器使用 Nginx 托管静态页面，容器内监听 `5526` 端口，`/api/` 反向代理固定指向 `http://karalive-backend:5823/api/`。给 Docker 前端设置 `HOST`、`PORT` 或 `BACKEND_URL` 都不会生效。改网页对外端口只需修改 Compose 映射左侧（如 `"8080:5526"`）；如需修改 Nginx 的后端代理目标，请调整 [Nginx 模板](../frontend/nginx.conf.template) 后重新构建前端镜像。
 
 ## Docker 构建参数
 
@@ -90,10 +90,10 @@ HOST=0.0.0.0
 
 ```yaml
 services:
-  ktv-web-backend:
+  karalive-backend:
     environment:
       CACHE_DATA_EXPIRE_TIME: 48h
-  ktv-web-frontend:
+  karalive-frontend:
     ports:
       - "8080:5526"
 ```

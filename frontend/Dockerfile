@@ -31,4 +31,4 @@ COPY --from=builder /app/frontend/dist /usr/share/nginx/html
 COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
 
 EXPOSE 5526
-ENV BACKEND_URL=http://ktv-web-backend:5823
+ENV BACKEND_URL=http://karalive-backend:5823
